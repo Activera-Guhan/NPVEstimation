@@ -1,0 +1,2241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NPV Estimation — Activera Consulting</title>
+
+  <!-- Google Font: Bebas Neue for the display headers, Inter for UI text -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Pyodide — runs Python in the browser via WebAssembly -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+
+  <style>
+    /* ─────────────────────────────────────────────────────────────────
+       DESIGN TOKENS — match Activera brand + PDF design spec
+    ───────────────────────────────────────────────────────────────── */
+    :root {
+      --blue-light:   #A8C4E8;   /* background fill, matches PDF */
+      --blue-mid:     #7BADD4;   /* button fill, panel accent */
+      --blue-dark:    #1A3A5C;   /* text, borders */
+      --green-go:     #27AE60;   /* GO button */
+      --green-go-hov: #1e8449;
+      --red-clear:    #C0392B;   /* CLEAR button */
+      --white:        #ffffff;
+      --off-white:    #F7F9FC;
+      --gray-check:   #888888;   /* default (locked) checkbox */
+      --gray-light:   #cccccc;
+      --border:       #5a8ab5;
+      --font-ui:      'Inter', sans-serif;
+      --font-display: 'Bebas Neue', sans-serif;
+      --radius:       6px;
+      --radius-lg:    14px;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       RESET & BASE
+    ───────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      background: #6fa0cc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       LANDING PAGE  (ratio 1920 × 1200 → 16:10, fills viewport)
+    ───────────────────────────────────────────────────────────────── */
+    #landing {
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 40%, #6fa0cc 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 36px;
+    }
+
+    #landing h1 {
+      font-family: var(--font-display);
+      font-size: clamp(64px, 8vw, 120px);
+      color: var(--blue-dark);
+      letter-spacing: 2px;
+      text-align: center;
+      text-shadow: 1px 2px 6px rgba(0,0,0,0.12);
+    }
+
+    #btn-start {
+      font-family: var(--font-display);
+      font-size: clamp(18px, 2.2vw, 28px);
+      letter-spacing: 1.5px;
+      color: var(--blue-dark);
+      background: var(--blue-mid);
+      border: 2.5px solid var(--blue-dark);
+      border-radius: 60px;
+      padding: 16px 64px;
+      cursor: pointer;
+      transition: background 0.18s, transform 0.12s;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+    }
+    #btn-start:hover { background: #92bfe0; transform: scale(1.03); }
+
+    /* ─────────────────────────────────────────────────────────────────
+       MAIN APP  (hidden until landing button clicked)
+    ───────────────────────────────────────────────────────────────── */
+    #app {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 50%, #6fa0cc 100%);
+      flex-direction: column;
+    }
+
+    /* ── Two-column layout: left panel | right results ── */
+    .app-body {
+      display: flex;
+      flex: 1;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       LEFT PANEL
+    ───────────────────────────────────────────────────────────────── */
+    #left-panel {
+      width: 50%;
+      min-width: 380px;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      border-right: 2px solid var(--border);
+      overflow: hidden;
+    }
+
+    .panel-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px 12px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    /* ── Section headers ── */
+    .section-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--blue-dark);
+      margin-bottom: 10px;
+      margin-top: 14px;
+    }
+    .section-title:first-child { margin-top: 0; }
+
+    /* ── Section containers ── */
+    .section-box {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      background: rgba(255,255,255,0.18);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       BASIC DETAILS
+    ───────────────────────────────────────────────────────────────── */
+    .basic-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+    .basic-row label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--blue-dark);
+      width: 115px;
+      flex-shrink: 0;
+    }
+    .basic-row input[type="text"] {
+      flex: 1;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.7);
+      color: var(--blue-dark);
+      outline: none;
+    }
+    .basic-row input[type="text"]:focus { border-color: var(--blue-dark); background: white; }
+
+    /* ─────────────────────────────────────────────────────────────────
+       ANALYSIS OPTIONS (checkboxes)
+    ───────────────────────────────────────────────────────────────── */
+    .analysis-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+    .analysis-row:last-child { margin-bottom: 0; }
+
+    /* Standard toggleable checkbox */
+    .chk-box {
+      width: 18px; height: 18px;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px;
+      background: white;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s;
+    }
+    .chk-box.checked { background: var(--gray-check); }
+    .chk-box.checked::after { content: '✓'; color: white; font-size: 12px; font-weight: 700; }
+
+    /* Locked (default, always-on) checkbox — dark gray, cannot uncheck */
+    .chk-box.locked {
+      background: #555;
+      cursor: default;
+    }
+    .chk-box.locked::after { content: '✓'; color: white; font-size: 12px; font-weight: 700; }
+
+    .analysis-label {
+      font-size: 13px;
+      color: var(--blue-dark);
+      font-weight: 500;
+      flex: 1;
+    }
+
+    /* Info bubble (ℹ) */
+    .info-btn {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 1.5px solid var(--blue-dark);
+      background: white;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--blue-dark);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .info-btn:hover .tooltip {
+      display: block;
+    }
+    .tooltip {
+      display: none;
+      position: absolute;
+      left: 22px; top: -4px;
+      background: white;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      font-size: 11.5px;
+      color: var(--blue-dark);
+      width: 230px;
+      z-index: 100;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+      line-height: 1.45;
+      font-weight: 400;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       INPUT OPTIONS
+    ───────────────────────────────────────────────────────────────── */
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .input-row:last-child { margin-bottom: 0; }
+
+    /* Mini checkbox (dark gray, locked-style toggle for optional rows) */
+    .mini-chk {
+      width: 20px; height: 20px;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px;
+      background: #555;
+      cursor: default;
+      flex-shrink: 0;
+    }
+
+    /* Soft benefit rows — toggleable mini-checkbox */
+    .soft-chk {
+      width: 18px; height: 18px;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px;
+      background: white;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s;
+    }
+    .soft-chk.checked { background: var(--gray-check); }
+    .soft-chk.checked::after { content: '✓'; color: white; font-size: 11px; font-weight: 700; }
+
+    .input-label {
+      font-size: 13px;
+      color: var(--blue-dark);
+      font-weight: 500;
+    }
+
+    /* Number-only entry fields */
+    input[type="number"].num-field {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 6px;
+      font-size: 12.5px;
+      background: rgba(255,255,255,0.7);
+      color: var(--blue-dark);
+      outline: none;
+      width: 88px;
+    }
+    input[type="number"].num-field:focus { border-color: var(--blue-dark); background: white; }
+    input[type="number"].num-field.wide { width: 160px; }
+
+    .sub-label {
+      font-size: 11.5px;
+      color: var(--blue-dark);
+      opacity: 0.8;
+    }
+
+    /* Sub-inputs group that appears under a row */
+    .sub-inputs {
+      margin-left: 32px;
+      margin-top: 6px;
+      margin-bottom: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .sub-inputs .sub-pair {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Soft benefit sub-inputs (hidden by default, shown when checked) */
+    .soft-sub { display: none; margin-left: 30px; margin-top: 6px; margin-bottom: 4px; }
+    .soft-sub.visible { display: block; }
+    .soft-sub-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 12px;
+    }
+    .soft-sub-grid .sub-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .soft-sub-grid .sub-pair label {
+      font-size: 11px;
+      color: var(--blue-dark);
+      opacity: 0.85;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       GO BUTTON (bottom of left panel)
+    ───────────────────────────────────────────────────────────────── */
+    .go-bar {
+      padding: 10px 20px;
+      border-top: 2px solid var(--border);
+      background: rgba(255,255,255,0.15);
+    }
+    #btn-go {
+      width: 100%;
+      background: var(--green-go);
+      color: white;
+      border: none;
+      border-radius: var(--radius-lg);
+      padding: 13px;
+      font-family: var(--font-display);
+      font-size: 26px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    }
+    #btn-go:hover { background: var(--green-go-hov); transform: scale(1.01); }
+    #btn-go:disabled { background: #888; cursor: not-allowed; transform: none; }
+
+    /* ─────────────────────────────────────────────────────────────────
+       RIGHT PANEL — RESULTS
+    ───────────────────────────────────────────────────────────────── */
+    #right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      border-bottom: 2px solid var(--border);
+      background: rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+    .results-header span {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--blue-dark);
+    }
+
+    #btn-clear {
+      background: var(--red-clear);
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 5px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #btn-clear:hover { opacity: 0.85; }
+
+    /* Results scroll area */
+    #results-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    /* Placeholder text shown before any run */
+    #results-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+    }
+    #results-placeholder p {
+      font-family: var(--font-display);
+      font-size: clamp(24px, 3.5vw, 44px);
+      color: var(--blue-dark);
+      line-height: 1.25;
+      max-width: 380px;
+      opacity: 0.85;
+    }
+
+    /* Chart container */
+    .chart-block {
+      margin-bottom: 22px;
+      background: rgba(255,255,255,0.25);
+      border-radius: var(--radius);
+      padding: 10px;
+      border: 1px solid var(--border);
+    }
+    .chart-block img {
+      width: 100%;
+      border-radius: 4px;
+      display: block;
+    }
+
+    /* Spider chart controls */
+    .spider-controls {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ctrl-row label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--blue-dark);
+      width: 160px;
+      flex-shrink: 0;
+    }
+    .ctrl-row select {
+      flex: 1;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.8);
+      color: var(--blue-dark);
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Text analysis summary */
+    #text-summary-block {
+      background: rgba(255,255,255,0.35);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--blue-dark);
+      line-height: 1.65;
+      margin-bottom: 22px;
+      white-space: pre-wrap;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       DOWNLOAD BAR
+    ───────────────────────────────────────────────────────────────── */
+    .download-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      border-top: 2px solid var(--border);
+      background: rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+
+    #btn-download {
+      flex: 1;
+      background: var(--blue-mid);
+      color: var(--blue-dark);
+      border: 2px solid var(--blue-dark);
+      border-radius: var(--radius-lg);
+      padding: 12px;
+      font-family: var(--font-display);
+      font-size: 22px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: background 0.15s;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+    }
+    #btn-download:hover { background: #92bfe0; }
+    #btn-download:disabled { background: var(--gray-light); cursor: not-allowed; }
+
+    .filetype-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--blue-dark);
+    }
+    #filetype-select {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 8px;
+      font-size: 13px;
+      background: rgba(255,255,255,0.8);
+      color: var(--blue-dark);
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       LOADING OVERLAY
+    ───────────────────────────────────────────────────────────────── */
+    #loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10,30,60,0.55);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 18px;
+    }
+    #loading-overlay.visible { display: flex; }
+    #loading-overlay p {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .spinner {
+      width: 52px; height: 52px;
+      border: 5px solid rgba(255,255,255,0.25);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─────────────────────────────────────────────────────────────────
+       POPUP / VALIDATION MESSAGE
+    ───────────────────────────────────────────────────────────────── */
+    #popup {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid var(--red-clear);
+      border-radius: var(--radius-lg);
+      padding: 24px 32px;
+      z-index: 1000;
+      max-width: 420px;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    #popup.visible { display: block; }
+    #popup h3 { color: var(--red-clear); margin-bottom: 10px; font-size: 16px; }
+    #popup p { color: var(--blue-dark); font-size: 13.5px; line-height: 1.6; }
+    #popup-close {
+      margin-top: 16px;
+      background: var(--blue-dark);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 8px 24px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+       PYODIDE BOOT NOTICE
+    ───────────────────────────────────────────────────────────────── */
+    #pyodide-status {
+      position: fixed;
+      bottom: 14px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(26,58,92,0.92);
+      color: white;
+      border-radius: 20px;
+      padding: 7px 20px;
+      font-size: 12.5px;
+      z-index: 500;
+      transition: opacity 0.4s;
+    }
+    #pyodide-status.hidden { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     LANDING PAGE
+═══════════════════════════════════════════════════════════════════ -->
+<div id="landing">
+  <h1>NPV ESTIMATION</h1>
+  <button id="btn-start" onclick="goToApp()">FIND YOUR NPV NOW!</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     MAIN APP
+═══════════════════════════════════════════════════════════════════ -->
+<div id="app">
+  <div class="app-body">
+
+    <!-- ─────────────── LEFT PANEL ─────────────── -->
+    <div id="left-panel">
+      <div class="panel-scroll" id="left-scroll">
+
+        <!-- BASIC DETAILS -->
+        <div class="section-title">Basic Details</div>
+        <div class="section-box">
+          <div class="basic-row">
+            <label>Project Name:</label>
+            <input type="text" id="inp-project-name" placeholder="e.g. ERP Transformation" />
+          </div>
+          <div class="basic-row">
+            <label>Company Name:</label>
+            <input type="text" id="inp-company-name" placeholder="e.g. Acme Corp" />
+          </div>
+        </div>
+
+        <!-- ANALYSIS OPTIONS -->
+        <div class="section-title">Analysis Options</div>
+        <div class="section-box">
+
+          <div class="analysis-row">
+            <div class="chk-box locked" id="chk-cashflow" title="Always on"></div>
+            <span class="analysis-label">Cash Flow Diagram</span>
+            <div class="info-btn">i
+              <div class="tooltip">Shows annual net cash flows as a bar chart and cumulative discounted PV as a line. The crossover point of the line at $0 is the project break-even. Bars are green (positive) or red (negative).</div>
+            </div>
+          </div>
+
+          <div class="analysis-row">
+            <div class="chk-box" id="chk-spider" onclick="toggleChk(this)" title="Toggle"></div>
+            <span class="analysis-label">Sensitivity Spider Chart</span>
+            <div class="info-btn">i
+              <div class="tooltip">Shows how NPV changes as each input variable moves ±20% from its base value. Steeper lines = more sensitive variables. Use Display Variable(s) to filter which lines appear.</div>
+            </div>
+          </div>
+
+          <div class="analysis-row">
+            <div class="chk-box" id="chk-mc" onclick="toggleChk(this)" title="Toggle"></div>
+            <span class="analysis-label">Monte Carlo Distribution</span>
+            <div class="info-btn">i
+              <div class="tooltip">Runs 10,000 simulated scenarios by randomly varying uncertain inputs. Produces a probability distribution of NPV outcomes and shows P10 (pessimistic), P50 (median), and P90 (optimistic) values.</div>
+            </div>
+          </div>
+
+          <div class="analysis-row">
+            <div class="chk-box" id="chk-text" onclick="toggleChk(this)" title="Toggle"></div>
+            <span class="analysis-label">Text Analysis Summary</span>
+            <div class="info-btn">i
+              <div class="tooltip">Produces a plain-language written summary of the model results: base NPV, verdict, P10/P50/P90 range, top risk driver, and confidence level. Useful for client-facing reports.</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- INPUT OPTIONS -->
+        <div class="section-title">Input Options</div>
+        <div class="section-box" id="input-options-box">
+
+          <!-- Initial Investment — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">Initial Investment (dollars)</span>
+            <div class="info-btn">i
+              <div class="tooltip">The total upfront project budget in dollars ($). This is recorded as a negative cash flow at Year 0. Enter a whole number, e.g. 1000000 for $1M.</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <input type="number" class="num-field wide" id="inp-investment" placeholder="e.g. 1000000" min="0" />
+          </div>
+
+          <!-- Annual Benefit — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">Annual Benefit (dollars)</span>
+            <div class="info-btn">i
+              <div class="tooltip">The base annual hard benefit this project delivers at full adoption — something that appears directly on a revenue or income statement. Enter dollars per year, e.g. 500000. Soft benefits are added separately below.</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <input type="number" class="num-field wide" id="inp-benefit" placeholder="e.g. 500000" min="0" />
+          </div>
+
+          <!-- Time — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">Time</span>
+            <div class="info-btn">i
+              <div class="tooltip">Duration: total project life in years (e.g. 10). Implementation: years before benefits begin (e.g. 1). Benefits are modelled in the remaining years (Duration − Implementation).</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <div class="sub-pair">
+              <span class="sub-label">Duration (years)</span>
+              <input type="number" class="num-field" id="inp-duration" placeholder="10" min="2" />
+            </div>
+            <div class="sub-pair">
+              <span class="sub-label">Implementation (years)</span>
+              <input type="number" class="num-field" id="inp-impl" placeholder="1" min="0" />
+            </div>
+          </div>
+
+          <!-- Annual Expenses — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">Annual Expenses (dollars)</span>
+            <div class="info-btn">i
+              <div class="tooltip">Ongoing annual operating cost once the project is live (opex). Enter dollars per year, e.g. 90000. This is subtracted from benefits each year. Costs inflate over time per the inflation rate.</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <input type="number" class="num-field wide" id="inp-opex" placeholder="e.g. 90000" min="0" />
+          </div>
+
+          <!-- S-Curve — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">S-Curve</span>
+            <div class="info-btn">i
+              <div class="tooltip">Models the ramp-up in project value over time. Adoption Peak (0–1): fraction of full benefit reached at maturity, e.g. 1.0 = 100%. Ramp Shape: steepness of the logistic curve — higher = sharper ramp, e.g. 2.0 = gradual, 6.0 = steep.</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <div class="sub-pair">
+              <span class="sub-label">Adoption Peak</span>
+              <input type="number" class="num-field" id="inp-peak" placeholder="1.0" min="0" max="1" step="0.01" />
+            </div>
+            <div class="sub-pair">
+              <span class="sub-label">Ramp Shape</span>
+              <input type="number" class="num-field" id="inp-ramp" placeholder="2.0" min="0.1" step="0.1" />
+            </div>
+          </div>
+
+          <!-- Discount / Tax / Inflation / Overhead — locked/required -->
+          <div class="input-row">
+            <div class="mini-chk"></div>
+            <span class="input-label">Discount, Tax, Inflation, and Overhead Rates</span>
+            <div class="info-btn">i
+              <div class="tooltip">All entered as decimals. Discount Rate: required return / WACC, e.g. 0.10 = 10%. Inflation Rate: general price inflation, e.g. 0.03 = 3%. Tax Rate: corporate tax, e.g. 0.25 = 25%. Overhead Rate: indirect cost ratio, e.g. 0.10 = 10%.</div>
+            </div>
+          </div>
+          <div class="sub-inputs">
+            <div class="sub-pair">
+              <span class="sub-label">Discount Rate</span>
+              <input type="number" class="num-field" id="inp-discount" placeholder="0.10" min="0" max="1" step="0.01" />
+            </div>
+            <div class="sub-pair">
+              <span class="sub-label">Inflation Rate</span>
+              <input type="number" class="num-field" id="inp-inflation" placeholder="0.03" min="0" max="1" step="0.01" />
+            </div>
+          </div>
+          <div class="sub-inputs" style="margin-top:4px;">
+            <div class="sub-pair">
+              <span class="sub-label">Tax Rate</span>
+              <input type="number" class="num-field" id="inp-tax" placeholder="0.25" min="0" max="1" step="0.01" />
+            </div>
+            <div class="sub-pair">
+              <span class="sub-label">Overhead Rate</span>
+              <input type="number" class="num-field" id="inp-overhead" placeholder="0.10" min="0" max="1" step="0.01" />
+            </div>
+          </div>
+
+          <!-- ── SOFT BENEFITS (1–15) — optional, toggleable ── -->
+          <div id="soft-benefits-section"></div>
+
+        </div><!-- /input-options-box -->
+      </div><!-- /panel-scroll -->
+
+      <!-- GO button -->
+      <div class="go-bar">
+        <button id="btn-go" onclick="runModel()">GO</button>
+      </div>
+    </div><!-- /left-panel -->
+
+    <!-- ─────────────── RIGHT PANEL ─────────────── -->
+    <div id="right-panel">
+      <div class="results-header">
+        <span>Results</span>
+        <button id="btn-clear" onclick="clearResults()">CLEAR</button>
+      </div>
+
+      <div id="results-scroll">
+        <div id="results-placeholder">
+          <p>INPUT THE NECESSARY INFORMATION ON THE LEFT TO PRODUCE NPV RESULTS.</p>
+        </div>
+        <div id="results-content" style="display:none;">
+
+          <!-- Cash Flow chart (always shown) -->
+          <div class="chart-block" id="block-cashflow">
+            <img id="img-cashflow" src="" alt="Cash Flow Diagram" />
+          </div>
+
+          <!-- Spider chart + controls -->
+          <div class="chart-block" id="block-spider" style="display:none;">
+            <img id="img-spider" src="" alt="Sensitivity Spider Chart" />
+            <div class="spider-controls">
+              <div class="ctrl-row">
+                <label>Display Variable(s):</label>
+                <select id="spider-display" onchange="updateSpider()">
+                  <option value="all">All Variables</option>
+                </select>
+              </div>
+              <div class="ctrl-row">
+                <label>Highlighted Variable:</label>
+                <select id="spider-highlight" onchange="updateSpider()">
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Monte Carlo chart -->
+          <div class="chart-block" id="block-mc" style="display:none;">
+            <img id="img-mc" src="" alt="Monte Carlo Distribution" />
+          </div>
+
+          <!-- Text summary -->
+          <div id="text-summary-block" style="display:none;"></div>
+
+        </div>
+      </div>
+
+      <!-- Download bar -->
+      <div class="download-bar">
+        <button id="btn-download" onclick="downloadResults()" disabled>DOWNLOAD</button>
+        <div class="filetype-wrap">
+          <span>File Type:</span>
+          <select id="filetype-select">
+            <option value="pdf">PDF</option>
+            <option value="png">PNG</option>
+            <option value="csv">CSV</option>
+          </select>
+        </div>
+      </div>
+    </div><!-- /right-panel -->
+
+  </div><!-- /app-body -->
+</div><!-- /app -->
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <p id="loading-msg">Loading Python engine...</p>
+</div>
+
+<!-- Validation popup -->
+<div id="popup">
+  <h3>Please Fill out the Following</h3>
+  <p id="popup-msg"></p>
+  <button id="popup-close" onclick="closePopup()">OK</button>
+</div>
+
+<!-- Pyodide boot status -->
+<div id="pyodide-status">⏳ Loading Python engine (first load ~10s)...</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════════════════════ -->
+<script>
+
+/* ─────────────────────────────────────────────────────────────────
+   SOFT BENEFIT MODULE DEFINITIONS
+   Mirrors SOFT_BENEFIT_MODULES in npvV2.py exactly.
+───────────────────────────────────────────────────────────────── */
+const SOFT_MODULES = [
+  { id: 1, label: "Time Saved / Productivity Gain",
+    info: "Benefit = hours saved × loaded rate × employees. Models automation, faster reporting, less manual reconciliation. Enter whole numbers for counts, dollar amounts for rates.",
+    fields: [
+      { key: "hours_saved_per_employee_per_year", label: "Hours saved per employee/year", placeholder: "e.g. 40" },
+      { key: "loaded_hourly_rate", label: "Employee loaded hourly rate ($)", placeholder: "e.g. 75" },
+      { key: "employees_affected_productivity", label: "Employees affected (#)", placeholder: "e.g. 50" },
+    ]},
+  { id: 2, label: "Reduced Manager Oversight",
+    info: "Benefit = manager hours freed × manager hourly rate. Covers reduced follow-up meetings, status chasing, and supervision time. Enter dollar amounts for rates.",
+    fields: [
+      { key: "manager_hours_saved_per_year", label: "Manager hours freed/year", placeholder: "e.g. 100" },
+      { key: "manager_loaded_hourly_rate", label: "Manager loaded hourly rate ($)", placeholder: "e.g. 120" },
+    ]},
+  { id: 3, label: "Faster Cycle Times",
+    info: "Benefit = (days saved across all cycles) × value per day. Useful when the project speeds up revenue recognition, billing, or delivery. Enter whole days for reductions.",
+    fields: [
+      { key: "days_to_close_deal_reduction", label: "Days shaved off deal cycle", placeholder: "e.g. 5" },
+      { key: "days_to_invoice_reduction", label: "Days shaved off invoicing", placeholder: "e.g. 3" },
+      { key: "days_to_process_request_reduction", label: "Days shaved off request processing", placeholder: "e.g. 2" },
+      { key: "value_per_day_of_cycle_time", label: "Dollar value per day saved ($)", placeholder: "e.g. 1000" },
+    ]},
+  { id: 4, label: "Revenue Uplift from Better Conversion",
+    info: "Benefit = conversion rate improvement × avg deal value × annual leads. Enter conversion improvement as decimal (e.g. 0.02 = +2%).",
+    fields: [
+      { key: "conversion_rate_improvement", label: "Conversion rate improvement (decimal)", placeholder: "e.g. 0.02" },
+      { key: "average_deal_value", label: "Average deal value ($)", placeholder: "e.g. 50000" },
+      { key: "annual_leads_or_opportunities", label: "Annual leads/opportunities (#)", placeholder: "e.g. 200" },
+    ]},
+  { id: 5, label: "Reduced Churn / Improved Customer Retention",
+    info: "Benefit = retention improvement × customer lifetime value × customers in scope. Enter retention improvement as decimal (e.g. 0.05 = 5% fewer lost customers).",
+    fields: [
+      { key: "retention_improvement_pct", label: "Churn reduction (decimal, e.g. 0.05)", placeholder: "e.g. 0.05" },
+      { key: "customer_lifetime_value", label: "Customer lifetime value ($)", placeholder: "e.g. 25000" },
+      { key: "customers_affected_retention", label: "Customers in scope (#)", placeholder: "e.g. 500" },
+    ]},
+  { id: 6, label: "Fewer Errors / Rework / Defects",
+    info: "Benefit = error reduction rate × cost per error × annual error volume. Enter error reduction as decimal (e.g. 0.40 = 40% fewer errors).",
+    fields: [
+      { key: "error_reduction_rate", label: "Error reduction rate (decimal, e.g. 0.40)", placeholder: "e.g. 0.40" },
+      { key: "cost_per_error", label: "Cost to fix one error ($)", placeholder: "e.g. 500" },
+      { key: "annual_error_volume", label: "Errors per year before project (#)", placeholder: "e.g. 200" },
+    ]},
+  { id: 7, label: "Reduced Training / Onboarding Burden",
+    info: "Benefit = training hours saved per hire × new hires/year × trainer rate. Models savings from standardized workflows and easier-to-learn systems.",
+    fields: [
+      { key: "training_hours_saved_per_new_hire", label: "Training hours saved per hire", placeholder: "e.g. 20" },
+      { key: "new_hires_per_year", label: "New hires per year (#)", placeholder: "e.g. 30" },
+      { key: "trainer_loaded_hourly_rate", label: "Trainer loaded hourly rate ($)", placeholder: "e.g. 90" },
+    ]},
+  { id: 8, label: "Lower Turnover / Improved Employee Retention",
+    info: "Benefit = turnover reduction × replacement cost × headcount in scope. Enter turnover reduction as decimal (e.g. 0.05 = 5% fewer departures). Replacement cost typically 50–200% of annual salary.",
+    fields: [
+      { key: "turnover_reduction_pct", label: "Turnover reduction (decimal, e.g. 0.05)", placeholder: "e.g. 0.05" },
+      { key: "replacement_cost_per_employee", label: "Replacement cost per employee ($)", placeholder: "e.g. 40000" },
+      { key: "employees_affected_turnover", label: "Headcount in scope (#)", placeholder: "e.g. 100" },
+    ]},
+  { id: 9, label: "Reduced Vendor / Contractor Spend",
+    info: "Benefit = contractor hours replaced × rate + other vendor spend eliminated. Often easier to justify than internal savings because it directly removes external cost.",
+    fields: [
+      { key: "contractor_hours_replaced", label: "Contractor hours replaced/year", placeholder: "e.g. 500" },
+      { key: "contractor_hourly_rate", label: "Contractor billing rate ($/hr)", placeholder: "e.g. 150" },
+      { key: "annual_vendor_spend_reduced", label: "Other vendor spend eliminated ($/yr)", placeholder: "e.g. 50000" },
+    ]},
+  { id: 10, label: "Reduced Compliance / Audit Burden",
+    info: "Benefit = audit hours saved × compliance rate + probability-weighted penalty avoidance. Penalty avoidance probability entered as decimal (0–1). Expected penalty is the face value of the fine or penalty.",
+    fields: [
+      { key: "audit_hours_saved", label: "Audit/compliance hours saved/year", placeholder: "e.g. 80" },
+      { key: "compliance_staff_loaded_rate", label: "Compliance staff loaded rate ($/hr)", placeholder: "e.g. 95" },
+      { key: "penalty_avoidance_prob", label: "Penalty avoidance probability (0–1)", placeholder: "e.g. 0.3" },
+      { key: "expected_penalty_avoidance", label: "Expected penalty value ($)", placeholder: "e.g. 100000" },
+    ]},
+  { id: 11, label: "Avoided Downtime / Service Interruptions",
+    info: "Benefit = downtime hours avoided per incident × cost/hour × incidents eliminated/year. Works well for infrastructure and systems projects.",
+    fields: [
+      { key: "downtime_hours_avoided", label: "Downtime hours avoided per incident", placeholder: "e.g. 4" },
+      { key: "cost_per_hour_downtime", label: "Cost per hour of downtime ($)", placeholder: "e.g. 5000" },
+      { key: "incidents_per_year_reduced", label: "Incidents eliminated per year (#)", placeholder: "e.g. 6" },
+    ]},
+  { id: 12, label: "Better Decision Quality",
+    info: "Benefit = forecast error reduction × cost of bad decisions × decisions improved. Enter forecast error reduction as decimal (0–1). A conservative but useful category for analytics and planning projects.",
+    fields: [
+      { key: "forecast_error_reduction", label: "Forecast error reduction (decimal, 0–1)", placeholder: "e.g. 0.20" },
+      { key: "cost_of_bad_decision", label: "Annual cost of poor decisions ($)", placeholder: "e.g. 200000" },
+      { key: "decisions_improved_per_year", label: "Decisions improved per year (#)", placeholder: "e.g. 10" },
+    ]},
+  { id: 13, label: "Increased Capacity Without Hiring",
+    info: "Benefit = avoided hires × fully-loaded annual salary. Models scaling capacity rather than eliminating roles — useful when the project lets the team handle more work without adding headcount.",
+    fields: [
+      { key: "avoided_hires", label: "FTE hires avoided (#)", placeholder: "e.g. 2" },
+      { key: "avg_fully_loaded_salary", label: "Fully-loaded annual cost per FTE ($)", placeholder: "e.g. 120000" },
+    ]},
+  { id: 14, label: "Reduced Travel / Meeting / Coordination Overhead",
+    info: "Benefit = travel cost reduction + (meeting hours + coordination hours) × loaded rate. Especially relevant for consulting, internal transformation, and rollout projects.",
+    fields: [
+      { key: "travel_cost_reduction", label: "Annual travel cost eliminated ($)", placeholder: "e.g. 30000" },
+      { key: "meeting_hours_saved", label: "Meeting hours saved/year", placeholder: "e.g. 200" },
+      { key: "coordination_hours_saved", label: "Coordination hours saved/year", placeholder: "e.g. 150" },
+      { key: "coordination_loaded_rate", label: "Loaded rate for these savings ($/hr)", placeholder: "e.g. 80" },
+    ]},
+  { id: 15, label: "Brand / Client Satisfaction Lift",
+    info: "Benefit = renewal rate improvement × renewal revenue + referral improvement × referral deal value. Enter improvements as decimals (e.g. 0.03 = +3%). Translates NPS gains into retained revenue.",
+    fields: [
+      { key: "renewal_rate_improvement", label: "Renewal rate increase (decimal, e.g. 0.03)", placeholder: "e.g. 0.03" },
+      { key: "annual_renewal_revenue", label: "Annual revenue up for renewal ($)", placeholder: "e.g. 500000" },
+      { key: "referral_rate_improvement", label: "Referral rate increase (decimal, e.g. 0.02)", placeholder: "e.g. 0.02" },
+      { key: "referral_avg_deal_value", label: "Average referral deal value ($)", placeholder: "e.g. 40000" },
+    ]},
+];
+
+/* ─────────────────────────────────────────────────────────────────
+   BUILD SOFT BENEFIT INPUT HTML DYNAMICALLY
+───────────────────────────────────────────────────────────────── */
+function buildSoftBenefits() {
+  const container = document.getElementById('soft-benefits-section');
+  SOFT_MODULES.forEach(mod => {
+    const fieldIds = mod.fields.map(f => `sb_${mod.id}_${f.key}`);
+
+    const wrapper = document.createElement('div');
+    wrapper.style.marginTop = '8px';
+
+    // Row with toggle checkbox + label + info
+    const row = document.createElement('div');
+    row.className = 'input-row';
+    row.innerHTML = `
+      <div class="soft-chk" id="softchk-${mod.id}" onclick="toggleSoft(${mod.id})"></div>
+      <span class="input-label">${mod.label}</span>
+      <div class="info-btn">i<div class="tooltip">${mod.info}</div></div>
+    `;
+    wrapper.appendChild(row);
+
+    // Sub-inputs (hidden until toggled)
+    const sub = document.createElement('div');
+    sub.className = 'soft-sub';
+    sub.id = `softsub-${mod.id}`;
+    const grid = document.createElement('div');
+    grid.className = 'soft-sub-grid';
+    mod.fields.forEach(f => {
+      const pair = document.createElement('div');
+      pair.className = 'sub-pair';
+      pair.innerHTML = `
+        <label>${f.label}</label>
+        <input type="number" class="num-field" id="sb_${mod.id}_${f.key}"
+               placeholder="${f.placeholder}" min="0" step="any" />
+      `;
+      grid.appendChild(pair);
+    });
+    sub.appendChild(grid);
+    wrapper.appendChild(sub);
+    container.appendChild(wrapper);
+  });
+}
+
+function toggleSoft(id) {
+  const chk = document.getElementById(`softchk-${id}`);
+  const sub = document.getElementById(`softsub-${id}`);
+  chk.classList.toggle('checked');
+  sub.classList.toggle('visible');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   CHECKBOX HELPERS
+───────────────────────────────────────────────────────────────── */
+function toggleChk(el) {
+  el.classList.toggle('checked');
+}
+
+function isChecked(id) {
+  return document.getElementById(id).classList.contains('checked');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PAGE NAVIGATION
+───────────────────────────────────────────────────────────────── */
+function goToApp() {
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   POPUP / VALIDATION
+───────────────────────────────────────────────────────────────── */
+function showPopup(msg) {
+  document.getElementById('popup-msg').textContent = msg;
+  document.getElementById('popup').classList.add('visible');
+}
+function closePopup() {
+  document.getElementById('popup').classList.remove('visible');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   CLEAR RESULTS
+───────────────────────────────────────────────────────────────── */
+function clearResults() {
+  document.getElementById('results-placeholder').style.display = 'flex';
+  document.getElementById('results-content').style.display = 'none';
+  document.getElementById('block-spider').style.display = 'none';
+  document.getElementById('block-mc').style.display = 'none';
+  document.getElementById('text-summary-block').style.display = 'none';
+  document.getElementById('btn-download').disabled = true;
+  lastResults = null;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PYODIDE SETUP
+───────────────────────────────────────────────────────────────── */
+let pyodide = null;
+let pyReady = false;
+let lastResults = null;
+
+async function initPyodide() {
+  try {
+    pyodide = await loadPyodide();
+    await pyodide.loadPackage(['numpy', 'pandas', 'matplotlib']);
+
+    // Load the engine code (inline — we strip the console-UI parts not needed in browser)
+    await pyodide.runPythonAsync(ENGINE_CODE);
+
+    pyReady = true;
+    const status = document.getElementById('pyodide-status');
+    status.textContent = '✅ Python engine ready';
+    setTimeout(() => status.classList.add('hidden'), 2500);
+  } catch(e) {
+    document.getElementById('pyodide-status').textContent = '❌ Engine failed to load: ' + e.message;
+    console.error(e);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   INPUT READING HELPERS
+───────────────────────────────────────────────────────────────── */
+function v(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function vf(id, fallback = 0) {
+  const val = parseFloat(v(id));
+  return isNaN(val) ? fallback : val;
+}
+function vi(id, fallback = 0) {
+  const val = parseInt(v(id));
+  return isNaN(val) ? fallback : val;
+}
+
+function validateInputs() {
+  const missing = [];
+  if (!v('inp-project-name')) missing.push('Project Name');
+  if (!v('inp-company-name')) missing.push('Company Name');
+  if (!v('inp-investment'))   missing.push('Initial Investment');
+  if (!v('inp-benefit'))      missing.push('Annual Benefit');
+  if (!v('inp-duration'))     missing.push('Duration (years)');
+  if (!v('inp-impl') && v('inp-impl') !== '0') missing.push('Implementation (years)');
+  if (!v('inp-opex'))         missing.push('Annual Expenses');
+  if (!v('inp-discount'))     missing.push('Discount Rate');
+  if (!v('inp-inflation'))    missing.push('Inflation Rate');
+  if (!v('inp-tax'))          missing.push('Tax Rate');
+  if (!v('inp-overhead'))     missing.push('Overhead Rate');
+  if (!v('inp-peak'))         missing.push('Adoption Peak');
+  if (!v('inp-ramp'))         missing.push('Ramp Shape');
+
+  const dur = vi('inp-duration', 0);
+  const impl = vi('inp-impl', 0);
+  if (dur > 0 && impl >= dur) {
+    missing.push('Duration must be greater than Implementation years');
+  }
+  return missing;
+}
+
+function collectSoftBenefits() {
+  // Returns a JS object keyed by field name → float value
+  const sb = {};
+  SOFT_MODULES.forEach(mod => {
+    const chk = document.getElementById(`softchk-${mod.id}`);
+    if (chk && chk.classList.contains('checked')) {
+      mod.fields.forEach(f => {
+        const val = parseFloat(document.getElementById(`sb_${mod.id}_${f.key}`)?.value || '0') || 0;
+        sb[f.key] = val;
+      });
+    }
+    // Fields that are NOT checked stay at 0 (default in SoftBenefits dataclass)
+  });
+  return sb;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   MAIN: RUN MODEL
+───────────────────────────────────────────────────────────────── */
+async function runModel() {
+  if (!pyReady) {
+    showPopup('Python engine is still loading. Please wait a moment and try again.');
+    return;
+  }
+
+  const missing = validateInputs();
+  if (missing.length > 0) {
+    showPopup('Missing required fields:\n• ' + missing.join('\n• '));
+    return;
+  }
+
+  showLoading('Running NPV model...');
+
+  try {
+    // Gather inputs
+    const params = {
+      project_name:         v('inp-project-name'),
+      company_name:         v('inp-company-name'),
+      initial_investment:   vf('inp-investment'),
+      annual_benefit:       vf('inp-benefit'),
+      duration_years:       vi('inp-duration'),
+      implementation_years: vi('inp-impl'),
+      annual_opex:          vf('inp-opex'),
+      adoption_peak:        vf('inp-peak', 1.0),
+      ramp_shape:           vf('inp-ramp', 2.0),
+      discount_rate:        vf('inp-discount', 0.10),
+      inflation_rate:       vf('inp-inflation', 0.03),
+      tax_rate:             vf('inp-tax', 0.25),
+      overhead_rate:        vf('inp-overhead', 0.10),
+      soft_benefits:        collectSoftBenefits(),
+      run_spider:           isChecked('chk-spider'),
+      run_mc:               isChecked('chk-mc'),
+      run_text:             isChecked('chk-text'),
+    };
+
+    // Pass params to Python and run
+    pyodide.globals.set('_js_params', params);
+    const result = await pyodide.runPythonAsync(`run_from_js(_js_params)`);
+    const res = result.toJs({ dict_converter: Object.fromEntries });
+
+    lastResults = { params, res };
+
+    displayResults(params, res);
+
+  } catch(e) {
+    hideLoading();
+    showPopup('Engine error: ' + e.message);
+    console.error(e);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   DISPLAY RESULTS
+───────────────────────────────────────────────────────────────── */
+function displayResults(params, res) {
+  hideLoading();
+
+  document.getElementById('results-placeholder').style.display = 'none';
+  document.getElementById('results-content').style.display = 'block';
+
+  // Cash flow chart (always shown)
+  document.getElementById('img-cashflow').src = 'data:image/png;base64,' + res.cashflow_img;
+  document.getElementById('block-cashflow').style.display = 'block';
+
+  // Spider chart
+  if (params.run_spider && res.spider_img) {
+    document.getElementById('img-spider').src = 'data:image/png;base64,' + res.spider_img;
+    document.getElementById('block-spider').style.display = 'block';
+
+    // Populate dropdowns
+    const vars = res.spider_variables || [];
+    const dispSel = document.getElementById('spider-display');
+    const hlSel = document.getElementById('spider-highlight');
+    dispSel.innerHTML = '<option value="all">All Variables</option>';
+    hlSel.innerHTML = '<option value="none">None</option>';
+    vars.forEach(v => {
+      const label = v.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      dispSel.innerHTML += `<option value="${v}">${label}</option>`;
+      hlSel.innerHTML += `<option value="${v}">${label}</option>`;
+    });
+  } else {
+    document.getElementById('block-spider').style.display = 'none';
+  }
+
+  // Monte Carlo chart
+  if (params.run_mc && res.mc_img) {
+    document.getElementById('img-mc').src = 'data:image/png;base64,' + res.mc_img;
+    document.getElementById('block-mc').style.display = 'block';
+  } else {
+    document.getElementById('block-mc').style.display = 'none';
+  }
+
+  // Text summary
+  if (params.run_text && res.text_summary) {
+    const el = document.getElementById('text-summary-block');
+    el.textContent = res.text_summary;
+    el.style.display = 'block';
+  } else {
+    document.getElementById('text-summary-block').style.display = 'none';
+  }
+
+  document.getElementById('btn-download').disabled = false;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   SPIDER CHART REFRESH  (triggered by dropdown changes)
+───────────────────────────────────────────────────────────────── */
+async function updateSpider() {
+  if (!lastResults || !pyReady) return;
+  showLoading('Updating spider chart...');
+  try {
+    const displayVar = document.getElementById('spider-display').value;
+    const hlVar = document.getElementById('spider-highlight').value;
+    pyodide.globals.set('_spider_display', displayVar);
+    pyodide.globals.set('_spider_highlight', hlVar);
+    const imgB64 = await pyodide.runPythonAsync(`redraw_spider(_spider_display, _spider_highlight)`);
+    document.getElementById('img-spider').src = 'data:image/png;base64,' + imgB64;
+  } catch(e) { console.error(e); }
+  hideLoading();
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   LOADING OVERLAY
+───────────────────────────────────────────────────────────────── */
+function showLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg || 'Running...';
+  document.getElementById('loading-overlay').classList.add('visible');
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').classList.remove('visible');
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   DOWNLOAD
+───────────────────────────────────────────────────────────────── */
+async function downloadResults() {
+  if (!lastResults || !pyReady) return;
+  const ftype = document.getElementById('filetype-select').value;
+  showLoading('Preparing download...');
+  try {
+    pyodide.globals.set('_dl_filetype', ftype);
+    const payload = await pyodide.runPythonAsync(`prepare_download(_dl_filetype)`);
+    const data = payload.toJs({ dict_converter: Object.fromEntries });
+
+    if (ftype === 'pdf') {
+      downloadBase64(data.content, 'npv_report.pdf', 'application/pdf');
+    } else if (ftype === 'png') {
+      downloadBase64(data.content, 'npv_charts.zip', 'application/zip');
+    } else if (ftype === 'csv') {
+      downloadBase64(data.content, 'npv_data.csv', 'text/csv');
+    }
+  } catch(e) {
+    showPopup('Download error: ' + e.message);
+    console.error(e);
+  }
+  hideLoading();
+}
+
+function downloadBase64(b64, filename, mime) {
+  const link = document.createElement('a');
+  link.href = `data:${mime};base64,${b64}`;
+  link.download = filename;
+  link.click();
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PYTHON ENGINE CODE (injected into Pyodide)
+   This is npvV2.py restructured for browser use:
+   - IPython / Path / file-writing removed (not available in Pyodide)
+   - Charts render to base64 strings instead of files
+   - run_from_js() is the single entry point called by JS
+───────────────────────────────────────────────────────────────── */
+const ENGINE_CODE = `
+import copy, io, base64, json
+from dataclasses import dataclass, field
+from typing import Dict, Tuple
+
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend for Pyodide
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import matplotlib.patches as mpatches
+
+# ─── 1) Global & Project Variable Definitions ────────────────────────────────
+
+@dataclass
+class GlobalVariables:
+    # These are assumptions that hold true across all projects
+    discount_rate: float = 0.10
+    tax_rate: float = 0.25
+    inflation_rate: float = 0.03
+    overhead_rate: float = 0.10
+
+
+@dataclass
+class ProjectVariables:
+    # These are assumptions that hold true for one specific project
+    project_name: str = "Project"
+
+    # Time "horizon"
+    duration_years: int = 5
+    implementation_years: int = 1
+
+    # Financial Information
+    initial_investment: float = 1_000_000
+    annual_benefit: float = 400_000
+    annual_opex: float = 80_000  # "opex" = operating expenses
+
+    # S-Curve Ramp Up
+    adoption_peak: float = 1.0
+    ramp_shape: float = 6.0
+
+    # Uncertainty ranges for Monte Carlo Simulation
+    uncertainty: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {
+        "initial_investment": (-0.10, 0.25),  # 10% less, 25% more
+        "annual_benefit": (-0.30, 0.20),       # benefits usually overestimated
+        "annual_opex": (-0.05, 0.20),           # opex can creep up
+        "duration_years": (0.00, 0.00),         # fixed
+        "discount_rate": (-0.02, 0.02),         # rate margin of error
+    })
+
+
+# ─── 1b) Soft Benefit Input Variables ────────────────────────────────────────
+
+@dataclass
+class SoftBenefits:
+
+    # 1) Time Saved / Productivity Gain
+    hours_saved_per_employee_per_year: float = 0.0
+    loaded_hourly_rate: float = 0.0
+    employees_affected_productivity: float = 0.0
+
+    # 2) Reduced Manager Oversight
+    manager_hours_saved_per_year: float = 0.0
+    manager_loaded_hourly_rate: float = 0.0
+
+    # 3) Faster Cycle Times
+    days_to_close_deal_reduction: float = 0.0
+    days_to_invoice_reduction: float = 0.0
+    days_to_process_request_reduction: float = 0.0
+    value_per_day_of_cycle_time: float = 0.0
+
+    # 4) Revenue Uplift from Better Conversion
+    conversion_rate_improvement: float = 0.0
+    average_deal_value: float = 0.0
+    annual_leads_or_opportunities: float = 0.0
+
+    # 5) Reduced Churn / Improved Retention
+    retention_improvement_pct: float = 0.0
+    customer_lifetime_value: float = 0.0
+    customers_affected_retention: float = 0.0
+
+    # 6) Fewer Errors / Rework / Defects
+    error_reduction_rate: float = 0.0
+    cost_per_error: float = 0.0
+    annual_error_volume: float = 0.0
+
+    # 7) Reduced Training / Onboarding Burden
+    training_hours_saved_per_new_hire: float = 0.0
+    new_hires_per_year: float = 0.0
+    trainer_loaded_hourly_rate: float = 0.0
+
+    # 8) Lower Turnover / Improved Employee Retention
+    turnover_reduction_pct: float = 0.0
+    replacement_cost_per_employee: float = 0.0
+    employees_affected_turnover: float = 0.0
+
+    # 9) Reduced Vendor / Contractor Spend
+    contractor_hours_replaced: float = 0.0
+    contractor_hourly_rate: float = 0.0
+    annual_vendor_spend_reduced: float = 0.0
+
+    # 10) Reduced Compliance / Audit Burden
+    audit_hours_saved: float = 0.0
+    compliance_staff_loaded_rate: float = 0.0
+    penalty_avoidance_prob: float = 0.0
+    expected_penalty_avoidance: float = 0.0
+
+    # 11) Avoided Downtime / Service Interruptions
+    downtime_hours_avoided: float = 0.0
+    cost_per_hour_downtime: float = 0.0
+    incidents_per_year_reduced: float = 0.0
+
+    # 12) Better Decision Quality
+    forecast_error_reduction: float = 0.0
+    cost_of_bad_decision: float = 0.0
+    decisions_improved_per_year: float = 0.0
+
+    # 13) Increased Capacity Without Hiring
+    avoided_hires: float = 0.0
+    avg_fully_loaded_salary: float = 0.0
+
+    # 14) Reduced Travel / Meeting / Coordination Overhead
+    travel_cost_reduction: float = 0.0
+    meeting_hours_saved: float = 0.0
+    coordination_hours_saved: float = 0.0
+    coordination_loaded_rate: float = 0.0
+
+    # 15) Brand / Client Satisfaction Lift
+    renewal_rate_improvement: float = 0.0
+    annual_renewal_revenue: float = 0.0
+    referral_rate_improvement: float = 0.0
+    referral_avg_deal_value: float = 0.0
+
+
+def compute_soft_benefits(sb: SoftBenefits) -> float:
+    # Returns the total annualised dollar value of all active soft benefit categories.
+    total = 0.0
+
+    # 1) Time Saved / Productivity Gain
+    total += sb.hours_saved_per_employee_per_year * sb.loaded_hourly_rate * sb.employees_affected_productivity
+
+    # 2) Reduced Manager Oversight
+    total += sb.manager_hours_saved_per_year * sb.manager_loaded_hourly_rate
+
+    # 3) Faster Cycle Times
+    total += (sb.days_to_close_deal_reduction + sb.days_to_invoice_reduction + sb.days_to_process_request_reduction) * sb.value_per_day_of_cycle_time
+
+    # 4) Revenue Uplift from Better Conversion
+    total += sb.conversion_rate_improvement * sb.average_deal_value * sb.annual_leads_or_opportunities
+
+    # 5) Reduced Churn / Improved Retention
+    total += sb.retention_improvement_pct * sb.customer_lifetime_value * sb.customers_affected_retention
+
+    # 6) Fewer Errors / Rework / Defects
+    total += sb.error_reduction_rate * sb.cost_per_error * sb.annual_error_volume
+
+    # 7) Reduced Training / Onboarding Burden
+    total += sb.training_hours_saved_per_new_hire * sb.new_hires_per_year * sb.trainer_loaded_hourly_rate
+
+    # 8) Lower Turnover / Improved Employee Retention
+    total += sb.turnover_reduction_pct * sb.replacement_cost_per_employee * sb.employees_affected_turnover
+
+    # 9) Reduced Vendor / Contractor Spend
+    total += sb.contractor_hours_replaced * sb.contractor_hourly_rate + sb.annual_vendor_spend_reduced
+
+    # 10) Reduced Compliance / Audit Burden
+    total += sb.audit_hours_saved * sb.compliance_staff_loaded_rate + sb.penalty_avoidance_prob * sb.expected_penalty_avoidance
+
+    # 11) Avoided Downtime / Service Interruptions
+    total += sb.downtime_hours_avoided * sb.cost_per_hour_downtime * max(sb.incidents_per_year_reduced, 1.0)
+
+    # 12) Better Decision Quality
+    total += sb.forecast_error_reduction * sb.cost_of_bad_decision * sb.decisions_improved_per_year
+
+    # 13) Increased Capacity Without Hiring
+    total += sb.avoided_hires * sb.avg_fully_loaded_salary
+
+    # 14) Reduced Travel / Meeting / Coordination Overhead
+    total += sb.travel_cost_reduction + (sb.meeting_hours_saved + sb.coordination_hours_saved) * sb.coordination_loaded_rate
+
+    # 15) Brand / Client Satisfaction Lift
+    total += sb.renewal_rate_improvement * sb.annual_renewal_revenue + sb.referral_rate_improvement * sb.referral_avg_deal_value
+
+    return total
+
+
+# ─── 2) S-Curve Adoption Ramp Up ─────────────────────────────────────────────
+
+def s_curve_weights(n_ramp_periods: int, shape: float = 6.0) -> np.ndarray:
+    # Ramp periods is how long (years) it takes for a project to reach full adoption
+    # Shape is the steepness of the curve
+    if n_ramp_periods <= 0:
+        return np.array([1.0])
+    t = np.linspace(-shape / 2, shape / 2, n_ramp_periods)  # spaces the numbers
+    curve = 1.0 / (1.0 + np.exp(-t))  # logistic function
+    curve = curve / curve[-1]  # normalization process
+    return curve
+
+
+# ─── 3) Modeling Cash Flow ────────────────────────────────────────────────────
+
+def build_cash_flows(proj: ProjectVariables, glob: GlobalVariables, soft: SoftBenefits = None) -> pd.DataFrame:
+    # contextual vars
+    r = glob.discount_rate
+    infl = glob.inflation_rate
+    T = proj.duration_years
+    impl = proj.implementation_years
+
+    benefit_years = T - impl
+    if benefit_years <= 0:
+        raise ValueError("lifespan of project must be longer than the implementation of the project")
+
+    weights = s_curve_weights(benefit_years, shape=proj.ramp_shape)
+    weights *= proj.adoption_peak  # takes every s-curve weight and multiplies it by the peak of the adoption
+
+    # Compute the annualised soft benefit total; defaults to $0 if no soft benefits provided
+    annual_soft = compute_soft_benefits(soft) if soft is not None else 0.0
+
+    rows = []
+
+    rows.append({
+        "year": 0,
+        "gross_benefit": 0.0,
+        "opex": 0.0,
+        "net_cash_flow": -proj.initial_investment,
+        "discount_factor": 1.0,
+        "pv_cash_flow": -proj.initial_investment,
+    })
+
+    for t in range(1, impl + 1):  # looping through the years
+        inflation_adj = (1 + infl) ** t
+        opex = proj.annual_opex * inflation_adj
+        ncf = -opex
+        df = 1.0 / (1 + r) ** t
+        rows.append({
+            "year": t,
+            "gross_benefit": 0.0,
+            "opex": opex,
+            "net_cash_flow": ncf,
+            "discount_factor": df,
+            "pv_cash_flow": ncf * df,
+        })
+
+    for i, w in enumerate(weights):  # looping through the x/t values on the logistic graph
+        t = impl + 1 + i
+        inflation_adj = (1 + infl) ** t
+        # Soft benefits also ramp up with the S-curve and inflate over time
+        gross_benefit = (proj.annual_benefit + annual_soft) * w * inflation_adj
+        opex = proj.annual_opex * inflation_adj
+        ncf = gross_benefit - opex
+        df = 1.0 / (1 + r) ** t
+        rows.append({
+            "year": t,
+            "gross_benefit": gross_benefit,
+            "opex": opex,
+            "net_cash_flow": ncf,
+            "discount_factor": df,
+            "pv_cash_flow": ncf * df,
+        })
+
+    df_cf = pd.DataFrame(rows)
+    df_cf["cumulative_pv"] = df_cf["pv_cash_flow"].cumsum()  # cumulative_pv is a running total of all the value created
+    return df_cf
+
+
+# ─── 4) Actual NPV calculation ────────────────────────────────────────────────
+
+def calculate_npv(cash_flow_table: pd.DataFrame) -> float:
+    return cash_flow_table["pv_cash_flow"].sum()  # initial investment subtraction has already occured
+
+
+# ─── 5) Sensitivity Analysis ─────────────────────────────────────────────────
+
+def sensitivity_analysis(proj: ProjectVariables, glob: GlobalVariables, swing_pct: float = 0.20, steps: int = 9) -> pd.DataFrame:
+    base_npv = calculate_npv(build_cash_flows(proj, glob))
+
+    variables = [
+        (proj, "initial_investment", "pct"),
+        (proj, "annual_benefit", "pct"),
+        (proj, "annual_opex", "pct"),
+        (proj, "duration_years", "pct"),
+        (glob, "discount_rate", "absolute"),
+    ]
+
+    records = []
+
+    for owner, var_name, ptype in variables:
+        base_val = getattr(owner, var_name)
+
+        if ptype == "pct":
+            deltas = np.linspace(-swing_pct, swing_pct, steps)
+            test_values = [base_val * (1 + d) for d in deltas]
+        else:
+            abs_swing = swing_pct * base_val if base_val != 0 else swing_pct
+            test_values = np.linspace(base_val - abs_swing, base_val + abs_swing, steps)
+            deltas = [(v - base_val) / base_val if base_val else 0 for v in test_values]
+
+        for tv, d in zip(test_values, deltas):
+            original = getattr(owner, var_name)
+
+            if var_name == "duration_years":
+                setattr(owner, var_name, max(int(round(tv)), owner.implementation_years + 1))
+            else:
+                setattr(owner, var_name, tv)
+
+            try:
+                npv = calculate_npv(build_cash_flows(proj, glob))
+            except ValueError:
+                npv = float('nan')
+
+            setattr(owner, var_name, original)
+
+            records.append({
+                "variable": var_name,
+                "base_value": base_val,
+                "test_value": tv,
+                "pct_change": d * 100,
+                "npv": npv,
+                "npv_delta": npv - base_npv,
+            })
+
+    return pd.DataFrame(records)
+
+
+def sensitivity_summary(sens_df: pd.DataFrame) -> pd.DataFrame:
+    summary = (
+        sens_df.groupby("variable")["npv"]
+        .agg(npv_low="min", npv_high="max")
+        .assign(npv_swing=lambda x: x["npv_high"] - x["npv_low"])
+        .sort_values("npv_swing", ascending=False)
+        .reset_index()
+    )
+    return summary
+
+
+# ─── 6) Monte Carlo Simulation ────────────────────────────────────────────────
+
+def monte_carlo_simulation(proj: ProjectVariables, glob: GlobalVariables, n_simulations: int = 10_000, seed: int = 42) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)  # seed is the initial value used to initialize a PRNG
+    uncertainty = proj.uncertainty
+
+    def tri_sample(base: float, lo_pct: float, hi_pct: float, n: int) -> np.ndarray:
+        # triangular rng (p10,50,90) for the value and uncertainty range
+        low = base * (1 + lo_pct)
+        high = base * (1 + hi_pct)
+        mode = np.clip(base, low, high)
+        return rng.triangular(low, mode, high, size=n)
+
+    def tri_abs(base: float, lo_abs: float, hi_abs: float, n: int) -> np.ndarray:
+        # same as previous but for absolute changes
+        low = base + lo_abs
+        high = base + hi_abs
+        mode = np.clip(base, low, high)
+        return rng.triangular(low, mode, high, size=n)
+
+    N = n_simulations
+    base_r = glob.discount_rate
+
+    inv_samples = tri_sample(proj.initial_investment, *uncertainty["initial_investment"], N)
+    ben_samples = tri_sample(proj.annual_benefit, *uncertainty["annual_benefit"], N)
+    opex_samples = tri_sample(proj.annual_opex, *uncertainty["annual_opex"], N)
+    dr_lo, dr_hi = uncertainty["discount_rate"]
+    rate_samples = tri_abs(base_r, dr_lo, dr_hi, N)
+
+    npv_results = np.empty(N)
+
+    p_trial = copy.deepcopy(proj)
+    g_trial = copy.deepcopy(glob)
+
+    for i in range(N):
+        p_trial.initial_investment = inv_samples[i]
+        p_trial.annual_benefit = ben_samples[i]
+        p_trial.annual_opex = opex_samples[i]
+        g_trial.discount_rate = rate_samples[i]
+
+        try:
+            cf = build_cash_flows(p_trial, g_trial)
+            npv_results[i] = calculate_npv(cf)
+        except ValueError:
+            npv_results[i] = float('nan')
+
+    results = pd.DataFrame({
+        "trial": np.arange(N),
+        "initial_investment": inv_samples,
+        "annual_benefit": ben_samples,
+        "annual_opex": opex_samples,
+        "discount_rate": rate_samples,
+        "npv": npv_results,
+    })
+
+    return results
+
+
+def probabilistic_summary(mc_results: pd.DataFrame) -> Dict:
+    # brings monte carlo results together
+    npv = mc_results["npv"].dropna()
+    return {
+        "p10": float(np.percentile(npv, 10)),
+        "p50": float(np.percentile(npv, 50)),
+        "p90": float(np.percentile(npv, 90)),
+        "mean": float(npv.mean()),
+        "std": float(npv.std()),
+        "prob_positive": float((npv > 0).mean() * 100),
+        "n_simulations": int(len(npv)),
+    }
+
+
+# ─── 7) Chart helpers ─────────────────────────────────────────────────────────
+
+COLORS = {
+    "primary": "#1A3A5C",
+    "accent": "#2E86AB",
+    "positive": "#27AE60",
+    "negative": "#C0392B",
+    "neutral": "#7F8C8D",
+    "highlight": "#F39C12",
+    "bg": "#F7F9FC",
+    "grid": "#DDE3EA",
+}
+
+plt.rcParams.update({
+    "figure.facecolor": COLORS["bg"],
+    "axes.facecolor": COLORS["bg"],
+    "axes.edgecolor": COLORS["neutral"],
+    "axes.grid": True,
+    "grid.color": COLORS["grid"],
+    "grid.linewidth": 0.6,
+    "font.family": "sans-serif",
+    "font.size": 10,
+    "axes.titlesize": 13,
+    "axes.labelsize": 10,
+    "xtick.color": COLORS["primary"],
+    "ytick.color": COLORS["primary"],
+})
+
+
+def _fmt_dollar(val: float) -> str:
+    if abs(val) >= 1e6:
+        return f"${val/1e6:.2f}M"
+    elif abs(val) >= 1e3:
+        return f"${val/1e3:.1f}K"
+    else:
+        return f"${val:.0f}"
+
+
+def _fig_to_b64(fig) -> str:
+    # Converts a matplotlib figure to a base64-encoded PNG string for the browser
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    buf.seek(0)
+    b64 = base64.b64encode(buf.read()).decode('utf-8')
+    plt.close(fig)
+    return b64
+
+
+def plot_cash_flows(cf_table: pd.DataFrame, project_name: str = "Project") -> str:
+    fig, ax1 = plt.subplots(figsize=(11, 5.5))
+    ax2 = ax1.twinx()
+
+    years = cf_table["year"].values
+    ncf = cf_table["net_cash_flow"].values
+    cum = cf_table["cumulative_pv"].values
+
+    bar_colors = [COLORS["positive"] if v >= 0 else COLORS["negative"] for v in ncf]
+    ax1.bar(years, ncf, color=bar_colors, alpha=0.82, zorder=3, width=0.55, label="Net Cash Flow")
+    ax1.axhline(0, color=COLORS["neutral"], linewidth=0.8, linestyle="--")
+
+    ax2.plot(years, cum, color=COLORS["accent"], linewidth=2.4, marker="o", markersize=5, zorder=4, label="Cumulative PV")
+    ax2.axhline(0, color=COLORS["highlight"], linewidth=1.2, linestyle=":", label="Break-even line")
+
+    final_npv = cum[-1]
+    ax2.annotate(
+        f"NPV = {_fmt_dollar(final_npv)}",
+        xy=(years[-1], final_npv),
+        xytext=(-60, 15), textcoords="offset points",
+        arrowprops=dict(arrowstyle="->", color=COLORS["primary"]),
+        fontsize=9, color=COLORS["primary"], fontweight="bold",
+    )
+
+    ax1.set_xlabel("Year", color=COLORS["primary"])
+    ax1.set_ylabel("Net Cash Flow ($)", color=COLORS["primary"])
+    ax2.set_ylabel("Cumulative PV ($)", color=COLORS["accent"])
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+
+    fig.suptitle(
+        f"{project_name} — Cash Flows & Cumulative Present Value",
+        fontsize=14, color=COLORS["primary"], fontweight="bold", y=1.01
+    )
+
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc="lower right", framealpha=0.9, fontsize=9)
+
+    plt.tight_layout()
+    return _fig_to_b64(fig)
+
+
+def plot_spider(sens_df: pd.DataFrame, base_npv: float, project_name: str = "Project",
+                display_var: str = "all", highlight_var: str = "none") -> str:
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+
+    palette = [COLORS["primary"], COLORS["accent"], COLORS["positive"], COLORS["negative"], COLORS["highlight"], "#8E44AD"]
+
+    for idx, (var, grp) in enumerate(sens_df.groupby("variable")):
+        # Filter: only draw selected variables
+        if display_var != "all" and var != display_var:
+            continue
+
+        grp = grp.sort_values("pct_change")
+
+        # Highlight logic: if a variable is highlighted, dim all others
+        is_highlighted = (highlight_var == var)
+        is_dimmed = (highlight_var != "none" and not is_highlighted)
+
+        alpha = 0.22 if is_dimmed else 1.0
+        lw = 3.2 if is_highlighted else 2.0
+
+        ax.plot(
+            grp["pct_change"], grp["npv"],
+            label=var.replace("_", " ").title(),
+            color=palette[idx % len(palette)],
+            linewidth=lw, marker="o", markersize=4 if not is_dimmed else 2,
+            alpha=alpha,
+        )
+
+    ax.axhline(base_npv, color=COLORS["neutral"], linestyle="--", linewidth=1.2, label="Base NPV")
+    ax.axhline(0, color=COLORS["negative"], linestyle=":", linewidth=1.0)
+    ax.axvline(0, color=COLORS["neutral"], linestyle="--", linewidth=0.8)
+
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:+.0f}%"))
+    ax.set_xlabel("% Change in Variable", color=COLORS["primary"])
+    ax.set_ylabel("NPV ($)", color=COLORS["primary"])
+    fig.suptitle(
+        f"{project_name} — Sensitivity Spider Chart",
+        fontsize=13, color=COLORS["primary"], fontweight="bold"
+    )
+    ax.legend(fontsize=9, loc="best", framealpha=0.9)
+
+    plt.tight_layout()
+    return _fig_to_b64(fig)
+
+
+def plot_monte_carlo(mc_results: pd.DataFrame, prob_summary: Dict, project_name: str = "Project") -> str:
+    npv = mc_results["npv"].dropna()
+    p10, p50, p90 = prob_summary["p10"], prob_summary["p50"], prob_summary["p90"]
+    prob_pos = prob_summary["prob_positive"]
+
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+
+    n_bins = min(80, int(len(npv) ** 0.5))
+    counts, bins, patches = ax.hist(npv, bins=n_bins, edgecolor="none", alpha=0.75)
+    for patch, left_edge in zip(patches, bins[:-1]):
+        patch.set_facecolor(COLORS["positive"] if left_edge >= 0 else COLORS["negative"])
+
+    for val, label, ls in [
+        (p10, "P10", "--"),
+        (p50, "P50 (Median)", "-"),
+        (p90, "P90", "--"),
+    ]:
+        ax.axvline(val, color=COLORS["highlight"], linewidth=1.8, linestyle=ls, label=f"{label}: {_fmt_dollar(val)}")
+
+    ax.axvline(0, color=COLORS["negative"], linewidth=1.4, linestyle=":", label="Break-even ($0)")
+
+    ax.text(
+        0.97, 0.95,
+        f"P10: {_fmt_dollar(p10)}\\nP50: {_fmt_dollar(p50)}\\nP90: {_fmt_dollar(p90)}\\n"
+        f"Mean: {_fmt_dollar(prob_summary['mean'])}\\n"
+        f"Prob(NPV>0): {prob_pos:.1f}%",
+        transform=ax.transAxes, fontsize=9,
+        verticalalignment="top", horizontalalignment="right",
+        bbox=dict(boxstyle="round,pad=0.5", facecolor="white", edgecolor=COLORS["neutral"], alpha=0.9),
+    )
+
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+    ax.set_xlabel("NPV ($)", color=COLORS["primary"])
+    ax.set_ylabel("Frequency", color=COLORS["primary"])
+    fig.suptitle(
+        f"{project_name} — Monte Carlo NPV Distribution ({prob_summary['n_simulations']:,} simulations)",
+        fontsize=13, color=COLORS["primary"], fontweight="bold"
+    )
+    ax.legend(fontsize=9, loc="upper left", framealpha=0.9)
+
+    plt.tight_layout()
+    return _fig_to_b64(fig)
+
+
+# ─── 8) State kept between calls (for spider redraw & download) ───────────────
+
+_last_sens_df = None
+_last_base_npv = None
+_last_project_name = None
+_last_cf_table = None
+_last_mc_results = None
+_last_prob_summ = None
+_last_text_summary = None
+_last_spider_img = None
+
+
+def fmt_py(val: float) -> str:
+    if abs(val) >= 1e6:
+        return f"${val/1e6:,.3f}M"
+    return f"${val:,.0f}"
+
+
+# ─── 9) Main entry point called by JavaScript ─────────────────────────────────
+
+def run_from_js(params):
+    global _last_sens_df, _last_base_npv, _last_project_name
+    global _last_cf_table, _last_mc_results, _last_prob_summ
+    global _last_text_summary, _last_spider_img
+
+    # Unpack parameters from JS
+    project_name = params["project_name"]
+    company_name = params.get("company_name", "")
+
+    glob = GlobalVariables(
+        discount_rate=float(params["discount_rate"]),
+        tax_rate=float(params["tax_rate"]),
+        inflation_rate=float(params["inflation_rate"]),
+        overhead_rate=float(params["overhead_rate"]),
+    )
+
+    proj = ProjectVariables(
+        project_name=project_name,
+        duration_years=int(params["duration_years"]),
+        implementation_years=int(params["implementation_years"]),
+        initial_investment=float(params["initial_investment"]),
+        annual_benefit=float(params["annual_benefit"]),
+        annual_opex=float(params["annual_opex"]),
+        adoption_peak=float(params["adoption_peak"]),
+        ramp_shape=float(params["ramp_shape"]),
+    )
+
+    # Build SoftBenefits from the JS dict (only keys passed are non-zero)
+    sb = SoftBenefits()
+    sb_dict = dict(params.get("soft_benefits", {}))
+    for key, val in sb_dict.items():
+        if hasattr(sb, key):
+            setattr(sb, key, float(val))
+
+    # Build cash flows and NPV
+    cf_table = build_cash_flows(proj, glob, sb)
+    base_npv = calculate_npv(cf_table)
+
+    # Always generate cash flow chart
+    cashflow_img = plot_cash_flows(cf_table, project_name)
+
+    # Sensitivity analysis (always computed — needed for spider if selected)
+    sens_df = sensitivity_analysis(proj, glob, swing_pct=0.20, steps=9)
+    summ_df = sensitivity_summary(sens_df)
+    top_driver = summ_df.iloc[0]["variable"]
+    spider_variables = list(sens_df["variable"].unique())
+
+    _last_sens_df = sens_df
+    _last_base_npv = base_npv
+    _last_project_name = project_name
+    _last_cf_table = cf_table
+
+    # Spider chart
+    spider_img = None
+    if params.get("run_spider", False):
+        spider_img = plot_spider(sens_df, base_npv, project_name)
+        _last_spider_img = spider_img
+
+    # Monte Carlo
+    mc_img = None
+    prob_summ = None
+    if params.get("run_mc", False):
+        mc_results = monte_carlo_simulation(proj, glob, n_simulations=10000)
+        prob_summ = probabilistic_summary(mc_results)
+        mc_img = plot_monte_carlo(mc_results, prob_summ, project_name)
+        _last_mc_results = mc_results
+        _last_prob_summ = prob_summ
+
+    # Text summary
+    text_summary = None
+    if params.get("run_text", False):
+        verdict = "POSITIVE — project creates value." if base_npv > 0 else "NEGATIVE — project destroys value."
+        annual_soft = compute_soft_benefits(sb)
+        soft_line = f"  Soft Benefits (annualised):  {fmt_py(annual_soft)}/yr\\n" if annual_soft > 0 else ""
+        mc_section = ""
+        if prob_summ:
+            prob_pos = prob_summ["prob_positive"]
+            conf = "HIGH" if prob_pos >= 75 else ("MODERATE" if prob_pos >= 50 else "LOW")
+            mc_section = (
+                f"\\n  MONTE CARLO RESULTS ({prob_summ['n_simulations']:,} simulations)\\n"
+                f"  {'─'*50}\\n"
+                f"  P10 (Downside / Pessimistic):  {fmt_py(prob_summ['p10'])}\\n"
+                f"  P50 (Median / Base Case):      {fmt_py(prob_summ['p50'])}\\n"
+                f"  P90 (Upside / Optimistic):     {fmt_py(prob_summ['p90'])}\\n"
+                f"  Mean NPV:                      {fmt_py(prob_summ['mean'])}\\n"
+                f"  Std Dev:                       {fmt_py(prob_summ['std'])}\\n"
+                f"  Probability NPV > 0:           {prob_pos:.1f}%\\n"
+                f"  Confidence:                    {conf}\\n"
+            )
+
+        text_summary = (
+            f"  {'═'*50}\\n"
+            f"  ACTIVERA CONSULTING  |  NPV VALUATION SUMMARY\\n"
+            f"  {'═'*50}\\n"
+            f"  Project:      {project_name}\\n"
+            f"  Company:      {company_name}\\n"
+            f"  Horizon:      {proj.duration_years} years  "
+            f"(impl: {proj.implementation_years} yr, "
+            f"benefit: {proj.duration_years - proj.implementation_years} yr)\\n"
+            f"  Discount:     {glob.discount_rate:.1%}  |  Inflation: {glob.inflation_rate:.1%}\\n"
+            f"{soft_line}"
+            f"\\n  BASE-CASE RESULTS\\n"
+            f"  {'─'*50}\\n"
+            f"  Initial Investment:  {fmt_py(proj.initial_investment)}\\n"
+            f"  Base-Case NPV:       {fmt_py(base_npv)}\\n"
+            f"  Verdict:             {verdict}\\n"
+            f"\\n  SENSITIVITY ANALYSIS\\n"
+            f"  {'─'*50}\\n"
+            f"  Top Risk Driver:  '{top_driver}'\\n"
+            f"  {'Variable':<28}  {'NPV Low':>12}  {'NPV High':>12}  {'Swing':>12}\\n"
+            + "".join(
+                f"  {row['variable']:<28}  {fmt_py(row['npv_low']):>12}  {fmt_py(row['npv_high']):>12}  {fmt_py(row['npv_swing']):>12}\\n"
+                for _, row in summ_df.iterrows()
+            )
+            + mc_section
+            + f"  {'═'*50}\\n"
+        )
+        _last_text_summary = text_summary
+
+    return {
+        "cashflow_img": cashflow_img,
+        "spider_img": spider_img,
+        "mc_img": mc_img,
+        "text_summary": text_summary,
+        "spider_variables": spider_variables,
+        "base_npv": base_npv,
+        "top_driver": top_driver,
+    }
+
+
+# ─── Spider redraw (called when dropdowns change) ─────────────────────────────
+
+def redraw_spider(display_var: str, highlight_var: str) -> str:
+    if _last_sens_df is None:
+        return ""
+    return plot_spider(_last_sens_df, _last_base_npv, _last_project_name,
+                       display_var=display_var, highlight_var=highlight_var)
+
+
+# ─── Download preparation ─────────────────────────────────────────────────────
+
+def prepare_download(filetype: str) -> Dict:
+    import zipfile
+
+    if filetype == "csv":
+        # Export cash flow table as CSV
+        buf = io.StringIO()
+        if _last_cf_table is not None:
+            _last_cf_table.to_csv(buf, index=False)
+            if _last_mc_results is not None:
+                buf.write("\\n\\nMonte Carlo Results (first 1000 rows)\\n")
+                _last_mc_results.head(1000).to_csv(buf, index=False)
+        csv_b64 = base64.b64encode(buf.getvalue().encode()).decode()
+        return {"content": csv_b64}
+
+    elif filetype == "png":
+        # Zip all generated chart PNGs
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Re-generate each chart and add to zip
+            if _last_cf_table is not None:
+                img_b64 = plot_cash_flows(_last_cf_table, _last_project_name or "Project")
+                zf.writestr("01_cash_flows.png", base64.b64decode(img_b64))
+
+            if _last_sens_df is not None:
+                img_b64 = plot_spider(_last_sens_df, _last_base_npv, _last_project_name or "Project")
+                zf.writestr("02_spider.png", base64.b64decode(img_b64))
+
+            if _last_mc_results is not None and _last_prob_summ is not None:
+                img_b64 = plot_monte_carlo(_last_mc_results, _last_prob_summ, _last_project_name or "Project")
+                zf.writestr("03_monte_carlo.png", base64.b64decode(img_b64))
+
+        zip_b64 = base64.b64encode(zip_buf.getvalue()).decode()
+        return {"content": zip_b64}
+
+    else:  # pdf — generate a simple multi-page PDF using matplotlib
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        pdf_buf = io.BytesIO()
+        with PdfPages(pdf_buf) as pdf:
+            # Title page
+            fig_t, ax_t = plt.subplots(figsize=(11, 8.5))
+            ax_t.axis('off')
+            ax_t.text(0.5, 0.65, "NPV VALUATION REPORT", ha='center', va='center',
+                      fontsize=28, fontweight='bold', color=COLORS["primary"],
+                      transform=ax_t.transAxes)
+            ax_t.text(0.5, 0.52, _last_project_name or "Project", ha='center', va='center',
+                      fontsize=18, color=COLORS["accent"], transform=ax_t.transAxes)
+            ax_t.text(0.5, 0.42, "Activera Consulting", ha='center', va='center',
+                      fontsize=14, color=COLORS["neutral"], transform=ax_t.transAxes)
+            if _last_text_summary:
+                ax_t.text(0.5, 0.15, _last_text_summary[:600], ha='center', va='center',
+                          fontsize=7, color=COLORS["primary"], transform=ax_t.transAxes,
+                          fontfamily='monospace')
+            pdf.savefig(fig_t, bbox_inches='tight')
+            plt.close(fig_t)
+
+            # Cash flow chart
+            if _last_cf_table is not None:
+                fig2, ax2 = plt.subplots(figsize=(11, 5.5))
+                ax2b = ax2.twinx()
+                years = _last_cf_table["year"].values
+                ncf = _last_cf_table["net_cash_flow"].values
+                cum = _last_cf_table["cumulative_pv"].values
+                bar_colors = [COLORS["positive"] if v >= 0 else COLORS["negative"] for v in ncf]
+                ax2.bar(years, ncf, color=bar_colors, alpha=0.82, zorder=3, width=0.55, label="Net Cash Flow")
+                ax2b.plot(years, cum, color=COLORS["accent"], linewidth=2.4, marker="o", markersize=5, label="Cumulative PV")
+                ax2b.axhline(0, color=COLORS["highlight"], linewidth=1.2, linestyle=":")
+                ax2.set_xlabel("Year"); ax2.set_ylabel("Net Cash Flow ($)"); ax2b.set_ylabel("Cumulative PV ($)")
+                ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+                ax2b.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+                fig2.suptitle(f"{_last_project_name} — Cash Flows", fontsize=13, color=COLORS["primary"], fontweight='bold')
+                plt.tight_layout()
+                pdf.savefig(fig2, bbox_inches='tight')
+                plt.close(fig2)
+
+            # Spider chart
+            if _last_sens_df is not None:
+                fig3, ax3 = plt.subplots(figsize=(10, 5.5))
+                palette = [COLORS["primary"], COLORS["accent"], COLORS["positive"], COLORS["negative"], COLORS["highlight"], "#8E44AD"]
+                for idx, (var, grp) in enumerate(_last_sens_df.groupby("variable")):
+                    grp = grp.sort_values("pct_change")
+                    ax3.plot(grp["pct_change"], grp["npv"], label=var.replace("_"," ").title(),
+                             color=palette[idx % len(palette)], linewidth=2.0, marker="o", markersize=4)
+                ax3.axhline(_last_base_npv, color=COLORS["neutral"], linestyle="--", linewidth=1.2, label="Base NPV")
+                ax3.axhline(0, color=COLORS["negative"], linestyle=":", linewidth=1.0)
+                ax3.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+                ax3.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:+.0f}%"))
+                ax3.set_xlabel("% Change"); ax3.set_ylabel("NPV ($)")
+                fig3.suptitle(f"{_last_project_name} — Sensitivity Spider Chart", fontsize=13, color=COLORS["primary"], fontweight='bold')
+                ax3.legend(fontsize=9, loc='best', framealpha=0.9)
+                plt.tight_layout()
+                pdf.savefig(fig3, bbox_inches='tight')
+                plt.close(fig3)
+
+            # Monte Carlo chart
+            if _last_mc_results is not None and _last_prob_summ is not None:
+                npv_arr = _last_mc_results["npv"].dropna()
+                fig4, ax4 = plt.subplots(figsize=(11, 5.5))
+                n_bins = min(80, int(len(npv_arr) ** 0.5))
+                counts, bins, patches = ax4.hist(npv_arr, bins=n_bins, edgecolor="none", alpha=0.75)
+                for patch, left_edge in zip(patches, bins[:-1]):
+                    patch.set_facecolor(COLORS["positive"] if left_edge >= 0 else COLORS["negative"])
+                for val, lbl, ls in [(_last_prob_summ["p10"],"P10","--"),(_last_prob_summ["p50"],"P50 (Median)","-"),(_last_prob_summ["p90"],"P90","--")]:
+                    ax4.axvline(val, color=COLORS["highlight"], linewidth=1.8, linestyle=ls, label=f"{lbl}: {_fmt_dollar(val)}")
+                ax4.axvline(0, color=COLORS["negative"], linewidth=1.4, linestyle=":", label="Break-even ($0)")
+                ax4.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))
+                ax4.set_xlabel("NPV ($)"); ax4.set_ylabel("Frequency")
+                fig4.suptitle(f"{_last_project_name} — Monte Carlo NPV Distribution", fontsize=13, color=COLORS["primary"], fontweight='bold')
+                ax4.legend(fontsize=9, loc='upper left', framealpha=0.9)
+                plt.tight_layout()
+                pdf.savefig(fig4, bbox_inches='tight')
+                plt.close(fig4)
+
+        pdf_b64 = base64.b64encode(pdf_buf.getvalue()).decode()
+        return {"content": pdf_b64}
+`;
+
+/* ─────────────────────────────────────────────────────────────────
+   BOOT
+───────────────────────────────────────────────────────────────── */
+window.addEventListener('DOMContentLoaded', () => {
+  buildSoftBenefits();
+  showLoading('Loading Python engine (first load ~10s)...');
+  initPyodide().then(() => hideLoading());
+});
+
+</script>
+</body>
+</html>
