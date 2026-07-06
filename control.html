@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NPV Control — Activera Consulting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Pyodide: use cdnjs mirror which is more reliably accessible -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
+  <style>
+    /* ── TOKENS ── */
+    :root {
+      --blue-mid:    #7BADD4;
+      --blue-dark:   #1A3A5C;
+      --green-go:    #27AE60;
+      --green-hov:   #1e8449;
+      --red-clear:   #C0392B;
+      --border:      #5a8ab5;
+      --gray-chk:    #555555;
+      --bg-panel:    rgba(255,255,255,0.18);
+      --font-ui:     'Inter', sans-serif;
+      --font-disp:   'Bebas Neue', sans-serif;
+      --r:           6px;
+      --r-lg:        14px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 50%, #6fa0cc 100%);
+    }
+
+    /* ── TWO-COLUMN LAYOUT ── */
+    .app-body {
+      display: flex; flex: 1; overflow: hidden;
+    }
+
+    /* ── LEFT PANEL ── */
+    #left-panel {
+      width: 50%; min-width: 360px; max-width: 660px;
+      display: flex; flex-direction: column;
+      border-right: 2px solid var(--border);
+      overflow: hidden;
+    }
+    .panel-scroll {
+      flex: 1; overflow-y: auto;
+      padding: 16px 18px 10px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    /* ── SECTION TITLES & BOXES ── */
+    .sec-title {
+      font-weight: 700; font-size: 13px;
+      color: var(--blue-dark);
+      margin: 14px 0 8px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .sec-title:first-child { margin-top: 0; }
+    .sec-box {
+      border: 1.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 11px 13px;
+      margin-bottom: 8px;
+      background: var(--bg-panel);
+    }
+
+    /* ── BASIC DETAILS ── */
+    .basic-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 7px;
+    }
+    .basic-row:last-child { margin-bottom: 0; }
+    .basic-row label {
+      font-size: 12.5px; font-weight: 600;
+      color: var(--blue-dark); width: 110px; flex-shrink: 0;
+    }
+    .basic-row input[type="text"] {
+      flex: 1; border: 1.5px solid var(--border);
+      border-radius: var(--r); padding: 5px 8px;
+      font-size: 12.5px; background: rgba(255,255,255,0.75);
+      color: var(--blue-dark); outline: none;
+    }
+    .basic-row input[type="text"]:focus { background: white; border-color: var(--blue-dark); }
+
+    /* ── CHECKBOXES (analysis options) ── */
+    .chk-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 7px; user-select: none;
+    }
+    .chk-row:last-child { margin-bottom: 0; }
+
+    /* The visible box */
+    .chk {
+      width: 18px; height: 18px; flex-shrink: 0;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px; background: white;
+      cursor: pointer;
+      position: relative;
+    }
+    /* Locked = always checked, gray, not clickable */
+    .chk.locked { background: var(--gray-chk); cursor: default; }
+    /* Toggled on */
+    .chk.on { background: var(--gray-chk); }
+    /* Checkmark via pseudo-element */
+    .chk.locked::after,
+    .chk.on::after {
+      content: '';
+      position: absolute;
+      left: 4px; top: 1px;
+      width: 6px; height: 10px;
+      border: 2.5px solid white;
+      border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .chk-label {
+      font-size: 13px; font-weight: 500;
+      color: var(--blue-dark); flex: 1;
+    }
+
+    /* ── INFO BUBBLE ── */
+    .info-wrap {
+      position: relative; flex-shrink: 0;
+    }
+    .info-btn {
+      width: 17px; height: 17px;
+      border-radius: 50%;
+      border: 1.5px solid var(--blue-dark);
+      background: white;
+      font-size: 10px; font-weight: 700;
+      color: var(--blue-dark);
+      cursor: default;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Tooltip opens LEFT so it never clips under the scrollbar */
+    .tooltip {
+      display: none;
+      position: absolute;
+      right: 22px; top: -4px;
+      background: white;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 8px 10px;
+      font-size: 11.5px; color: var(--blue-dark);
+      width: 220px; z-index: 200;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+      line-height: 1.45; font-weight: 400;
+      pointer-events: none;
+    }
+    .info-wrap:hover .tooltip { display: block; }
+
+    /* ── INPUT OPTION ROWS ── */
+    .inp-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 7px;
+    }
+    /* Mini locked checkbox (dark, always on) */
+    .mini-chk {
+      width: 17px; height: 17px; flex-shrink: 0;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px; background: var(--gray-chk);
+      position: relative;
+    }
+    .mini-chk::after {
+      content: '';
+      position: absolute;
+      left: 3px; top: 0px;
+      width: 5px; height: 9px;
+      border: 2px solid white;
+      border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .inp-label {
+      font-size: 12.5px; font-weight: 500;
+      color: var(--blue-dark); flex: 1;
+    }
+
+    /* Sub-input groups */
+    .sub-group {
+      margin-left: 26px; margin-top: 5px; margin-bottom: 6px;
+      display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    }
+    .sub-pair { display: flex; align-items: center; gap: 5px; }
+    .sub-pair label {
+      font-size: 11px; color: var(--blue-dark); opacity: 0.85;
+    }
+    input[type="number"].nf {
+      width: 86px;
+      border: 1.5px solid var(--border); border-radius: var(--r);
+      padding: 4px 6px; font-size: 12px;
+      background: rgba(255,255,255,0.75); color: var(--blue-dark);
+      outline: none;
+    }
+    input[type="number"].nf.wide { width: 150px; }
+    input[type="number"].nf:focus { background: white; border-color: var(--blue-dark); }
+
+    /* ── SOFT BENEFIT ROWS ── */
+    .soft-divider {
+      border: none; border-top: 1px dashed var(--border);
+      margin: 10px 0 8px;
+    }
+    .soft-sec-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--blue-dark); opacity: 0.7;
+      margin-bottom: 6px;
+    }
+    /* Soft checkbox — toggleable */
+    .soft-chk {
+      width: 17px; height: 17px; flex-shrink: 0;
+      border: 2px solid var(--blue-dark);
+      border-radius: 3px; background: white;
+      cursor: pointer; position: relative;
+    }
+    .soft-chk.on { background: var(--gray-chk); }
+    .soft-chk.on::after {
+      content: '';
+      position: absolute;
+      left: 3px; top: 0px;
+      width: 5px; height: 9px;
+      border: 2px solid white;
+      border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .soft-sub {
+      display: none;
+      margin-left: 26px; margin-top: 5px; margin-bottom: 4px;
+    }
+    .soft-sub.open { display: block; }
+    .soft-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 5px 10px;
+    }
+    .soft-grid .sub-pair { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .soft-grid .sub-pair label { font-size: 10.5px; color: var(--blue-dark); opacity: 0.85; }
+
+    /* ── GO BUTTON ── */
+    .go-bar {
+      height: 64px;
+      display: flex; align-items: center;
+      padding: 0 18px;
+      border-top: 2px solid var(--border);
+      background: rgba(255,255,255,0.12);
+      flex-shrink: 0;
+    }
+    .go-bar #btn-go { flex: 1; }
+    #btn-go {
+      width: 100%;
+      background: var(--green-go); color: white;
+      border: none; border-radius: var(--r-lg);
+      padding: 13px;
+      font-family: var(--font-disp); font-size: 26px; letter-spacing: 2px;
+      cursor: pointer; transition: background 0.15s, transform 0.1s;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+    }
+    #btn-go:hover { background: var(--green-hov); transform: scale(1.01); }
+
+    /* ── RIGHT PANEL ── */
+    #right-panel {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .results-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 18px;
+      border-bottom: 2px solid var(--border);
+      background: rgba(255,255,255,0.12); flex-shrink: 0;
+    }
+    .results-hdr span { font-weight: 700; font-size: 15px; color: var(--blue-dark); }
+    #btn-clear {
+      background: var(--red-clear); color: white;
+      border: none; border-radius: 20px;
+      padding: 5px 16px; font-size: 12px; font-weight: 700;
+      letter-spacing: 1px; cursor: pointer;
+    }
+    #btn-clear:hover { opacity: 0.85; }
+
+    #results-scroll {
+      flex: 1; overflow-y: auto; padding: 16px 18px;
+      scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    }
+    #placeholder {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; text-align: center;
+    }
+    #placeholder p {
+      font-family: var(--font-disp);
+      font-size: clamp(22px, 3vw, 40px);
+      color: var(--blue-dark); line-height: 1.3;
+      max-width: 360px; opacity: 0.85;
+    }
+
+    .chart-block {
+      margin-bottom: 20px;
+      background: rgba(255,255,255,0.25);
+      border-radius: var(--r); padding: 10px;
+      border: 1px solid var(--border);
+    }
+    .chart-block img { width: 100%; border-radius: 4px; display: block; }
+
+    .spider-ctrls { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .ctrl-row { display: flex; align-items: center; gap: 10px; }
+    .ctrl-row label {
+      font-size: 12.5px; font-weight: 600; color: var(--blue-dark);
+      width: 155px; flex-shrink: 0;
+    }
+    .ctrl-row select {
+      flex: 1; border: 1.5px solid var(--border); border-radius: var(--r);
+      padding: 5px 8px; font-size: 12.5px;
+      background: rgba(255,255,255,0.85); color: var(--blue-dark); outline: none;
+    }
+
+    #text-summary {
+      background: rgba(255,255,255,0.35);
+      border-radius: var(--r); border: 1px solid var(--border);
+      padding: 14px 16px; font-size: 12.5px; color: var(--blue-dark);
+      line-height: 1.65; margin-bottom: 20px;
+      white-space: pre-wrap; font-family: 'Courier New', monospace;
+    }
+
+    /* ── DOWNLOAD BAR ── */
+    .dl-bar {
+      height: 64px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 18px;
+      border-top: 2px solid var(--border);
+      background: rgba(255,255,255,0.12); flex-shrink: 0;
+    }
+    #btn-dl {
+      flex: 1; background: var(--blue-mid); color: var(--blue-dark);
+      border: 2px solid var(--blue-dark); border-radius: var(--r-lg);
+      padding: 12px; font-family: var(--font-disp); font-size: 22px;
+      letter-spacing: 2px; cursor: pointer; transition: background 0.15s;
+    }
+    #btn-dl:hover { background: #92bfe0; }
+    #btn-dl:disabled { background: #ccc; color: #888; cursor: not-allowed; }
+    .ft-wrap { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--blue-dark); }
+    #ft-sel {
+      border: 1.5px solid var(--border); border-radius: var(--r);
+      padding: 6px 8px; font-size: 13px;
+      background: rgba(255,255,255,0.85); color: var(--blue-dark); outline: none;
+    }
+
+    /* ── LOADING OVERLAY ── */
+    #loading {
+      display: none; position: fixed; inset: 0;
+      background: rgba(10,30,60,0.55); z-index: 999;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 18px;
+    }
+    #loading.on { display: flex; }
+    #loading p { color: white; font-size: 18px; font-weight: 600; }
+    .spinner {
+      width: 52px; height: 52px;
+      border: 5px solid rgba(255,255,255,0.25);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── POPUP ── */
+    #popup {
+      display: none; position: fixed;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: white; border: 2px solid var(--red-clear);
+      border-radius: var(--r-lg); padding: 24px 30px;
+      z-index: 1000; max-width: 400px; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    #popup.on { display: block; }
+    #popup h3 { color: var(--red-clear); margin-bottom: 10px; font-size: 16px; }
+    #popup p { color: var(--blue-dark); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+    #popup-ok {
+      margin-top: 14px; background: var(--blue-dark); color: white;
+      border: none; border-radius: var(--r); padding: 8px 22px; cursor: pointer; font-size: 13px;
+    }
+
+    /* ── STATUS BAR ── */
+    #status {
+      position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(26,58,92,0.92); color: white;
+      border-radius: 20px; padding: 6px 18px; font-size: 12px;
+      z-index: 500; transition: opacity 0.4s;
+    }
+    #status.hidden { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div class="app-body">
+
+  <!-- ══ LEFT PANEL ══ -->
+  <div id="left-panel">
+    <div class="panel-scroll">
+
+      <!-- BASIC DETAILS -->
+      <div class="sec-title">Basic Details</div>
+      <div class="sec-box">
+        <div class="basic-row">
+          <label>Project Name:</label>
+          <input type="text" id="inp-proj" placeholder="e.g. ERP Transformation" />
+        </div>
+        <div class="basic-row">
+          <label>Company Name:</label>
+          <input type="text" id="inp-co" placeholder="e.g. Acme Corp" />
+        </div>
+      </div>
+
+      <!-- ANALYSIS OPTIONS -->
+      <div class="sec-title">Analysis Options</div>
+      <div class="sec-box">
+
+        <div class="chk-row">
+          <div class="chk locked"></div>
+          <span class="chk-label">Cash Flow Diagram</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Always generated. Shows annual net cash flows as bars (green = positive, red = negative) and cumulative discounted PV as a line. The line crossing $0 is the break-even point.</div>
+          </div>
+        </div>
+
+        <div class="chk-row" onclick="toggleChk('chk-spider')">
+          <div class="chk" id="chk-spider"></div>
+          <span class="chk-label">Sensitivity Spider Chart</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Shows how NPV responds as each variable moves ±20% from base. Steeper slope = more sensitive. Use the dropdowns in Results to filter or highlight a variable.</div>
+          </div>
+        </div>
+
+        <div class="chk-row" onclick="toggleChk('chk-mc')">
+          <div class="chk" id="chk-mc"></div>
+          <span class="chk-label">Monte Carlo Distribution</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Runs 10,000 simulated scenarios with randomly varied inputs. Produces a histogram of NPV outcomes and marks P10 (pessimistic), P50 (median), and P90 (optimistic) values.</div>
+          </div>
+        </div>
+
+        <div class="chk-row" onclick="toggleChk('chk-text')">
+          <div class="chk" id="chk-text"></div>
+          <span class="chk-label">Text Analysis Summary</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Produces a plain-language written summary: base NPV verdict, P10/P50/P90 range, top risk driver, and confidence level. Useful for client-facing reports.</div>
+          </div>
+        </div>
+
+      </div><!-- /analysis sec-box -->
+
+      <!-- INPUT OPTIONS -->
+      <div class="sec-title">Input Options</div>
+      <div class="sec-box">
+
+        <!-- Initial Investment -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">Initial Investment (dollars)</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Total upfront project budget ($). Recorded as a negative cash flow at Year 0. e.g. 1000000 for $1M.</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <input type="number" class="nf wide" id="inp-investment" placeholder="e.g. 1000000" min="0" />
+        </div>
+
+        <!-- Annual Benefit -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">Annual Benefit (dollars)</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Base annual hard benefit at full adoption — e.g. revenue or direct cost savings that appear on a P&L. Enter $/year. Soft benefits are added below.</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <input type="number" class="nf wide" id="inp-benefit" placeholder="e.g. 500000" min="0" />
+        </div>
+
+        <!-- Time -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">Time</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Duration: total project life in years. Implementation: years before benefits begin. Benefit years = Duration − Implementation.</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <div class="sub-pair">
+            <label>Duration (yrs)</label>
+            <input type="number" class="nf" id="inp-duration" placeholder="10" min="2" />
+          </div>
+          <div class="sub-pair">
+            <label>Implementation (yrs)</label>
+            <input type="number" class="nf" id="inp-impl" placeholder="1" min="0" />
+          </div>
+        </div>
+
+        <!-- Annual Expenses -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">Annual Expenses (dollars)</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Ongoing annual operating cost (opex) once live. Subtracted from benefits each year. Inflates over time per the inflation rate.</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <input type="number" class="nf wide" id="inp-opex" placeholder="e.g. 90000" min="0" />
+        </div>
+
+        <!-- S-Curve -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">S-Curve</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">Models benefit ramp-up. Adoption Peak (0–1): fraction of full benefit at maturity. Ramp Shape: logistic curve steepness — 2.0 = gradual, 6.0 = steep.</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <div class="sub-pair">
+            <label>Adoption Peak (0–1)</label>
+            <input type="number" class="nf" id="inp-peak" placeholder="1.0" min="0" max="1" step="0.01" />
+          </div>
+          <div class="sub-pair">
+            <label>Ramp Shape</label>
+            <input type="number" class="nf" id="inp-ramp" placeholder="2.0" min="0.1" step="0.1" />
+          </div>
+        </div>
+
+        <!-- Rates -->
+        <div class="inp-row">
+          <div class="mini-chk"></div>
+          <span class="inp-label">Discount, Tax, Inflation &amp; Overhead Rates</span>
+          <div class="info-wrap">
+            <div class="info-btn">i</div>
+            <div class="tooltip">All entered as decimals. Discount: WACC / required return (e.g. 0.10). Inflation: general price inflation (e.g. 0.03). Tax: corporate tax (e.g. 0.25). Overhead: indirect cost ratio (e.g. 0.10).</div>
+          </div>
+        </div>
+        <div class="sub-group">
+          <div class="sub-pair">
+            <label>Discount Rate</label>
+            <input type="number" class="nf" id="inp-discount" placeholder="0.10" min="0" max="1" step="0.01" />
+          </div>
+          <div class="sub-pair">
+            <label>Inflation Rate</label>
+            <input type="number" class="nf" id="inp-inflation" placeholder="0.03" min="0" max="1" step="0.01" />
+          </div>
+          <div class="sub-pair">
+            <label>Tax Rate</label>
+            <input type="number" class="nf" id="inp-tax" placeholder="0.25" min="0" max="1" step="0.01" />
+          </div>
+          <div class="sub-pair">
+            <label>Overhead Rate</label>
+            <input type="number" class="nf" id="inp-overhead" placeholder="0.10" min="0" max="1" step="0.01" />
+          </div>
+        </div>
+
+        <!-- SOFT BENEFITS — injected by buildSoftBenefits() -->
+        <hr class="soft-divider" />
+        <div class="soft-sec-label">Optional Soft Benefit Modules (click to expand)</div>
+        <div id="soft-container"></div>
+
+      </div><!-- /input sec-box -->
+    </div><!-- /panel-scroll -->
+
+    <div class="go-bar">
+      <button id="btn-go" onclick="runModel()">GO</button>
+    </div>
+  </div><!-- /left-panel -->
+
+  <!-- ══ RIGHT PANEL ══ -->
+  <div id="right-panel">
+    <div class="results-hdr">
+      <span>Results</span>
+      <button id="btn-clear" onclick="clearResults()">CLEAR</button>
+    </div>
+
+    <div id="results-scroll">
+      <div id="placeholder">
+        <p>INPUT THE NECESSARY INFORMATION ON THE LEFT TO PRODUCE NPV RESULTS.</p>
+      </div>
+      <div id="results-content" style="display:none;">
+
+        <div class="chart-block" id="blk-cf">
+          <img id="img-cf" src="" alt="Cash Flow Diagram" />
+        </div>
+
+        <div class="chart-block" id="blk-spider" style="display:none;">
+          <img id="img-spider" src="" alt="Sensitivity Spider Chart" />
+          <div class="spider-ctrls">
+            <div class="ctrl-row">
+              <label>Display Variable(s):</label>
+              <select id="spider-disp" onchange="updateSpider()">
+                <option value="all">All Variables</option>
+              </select>
+            </div>
+            <div class="ctrl-row">
+              <label>Highlighted Variable:</label>
+              <select id="spider-hl" onchange="updateSpider()">
+                <option value="none">None</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-block" id="blk-mc" style="display:none;">
+          <img id="img-mc" src="" alt="Monte Carlo Distribution" />
+        </div>
+
+        <div id="text-summary" style="display:none;"></div>
+
+      </div>
+    </div><!-- /results-scroll -->
+
+    <div class="dl-bar">
+      <button id="btn-dl" onclick="doDownload()" disabled>DOWNLOAD</button>
+      <div class="ft-wrap">
+        <span>File Type:</span>
+        <select id="ft-sel">
+          <option value="pdf">PDF</option>
+          <option value="png">PNG</option>
+          <option value="csv">CSV</option>
+        </select>
+      </div>
+    </div>
+  </div><!-- /right-panel -->
+
+</div><!-- /app-body -->
+
+<!-- Loading overlay -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p id="load-msg">Loading Python engine...</p>
+</div>
+
+<!-- Validation popup -->
+<div id="popup">
+  <h3>Please fill out the following</h3>
+  <p id="popup-msg"></p>
+  <button id="popup-ok" onclick="closePopup()">OK</button>
+</div>
+
+<!-- Status bar -->
+<div id="status">⏳ Loading Python engine (first load ~20s)...</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   SOFT BENEFIT MODULE DEFINITIONS
+══════════════════════════════════════════════════════════════════ */
+const SOFT_MODULES = [
+  { id:1, label:"Time Saved / Productivity Gain",
+    info:"Benefit = hours saved × loaded rate × employees. Covers automation, faster reporting, less manual reconciliation.",
+    fields:[
+      {key:"hours_saved_per_employee_per_year", label:"Hours saved per employee/year", ph:"e.g. 40"},
+      {key:"loaded_hourly_rate",                label:"Employee loaded hourly rate ($)", ph:"e.g. 75"},
+      {key:"employees_affected_productivity",   label:"Employees affected (#)", ph:"e.g. 50"},
+    ]},
+  { id:2, label:"Reduced Manager Oversight",
+    info:"Benefit = manager hours freed × manager hourly rate. Covers reduced meetings, status chasing, and supervision.",
+    fields:[
+      {key:"manager_hours_saved_per_year",  label:"Manager hours freed/year", ph:"e.g. 100"},
+      {key:"manager_loaded_hourly_rate",    label:"Manager loaded hourly rate ($)", ph:"e.g. 120"},
+    ]},
+  { id:3, label:"Faster Cycle Times",
+    info:"Benefit = (days saved across all cycles) × value per day. Useful for faster revenue recognition, billing, or delivery.",
+    fields:[
+      {key:"days_to_close_deal_reduction",       label:"Days shaved off deal cycle", ph:"e.g. 5"},
+      {key:"days_to_invoice_reduction",           label:"Days shaved off invoicing", ph:"e.g. 3"},
+      {key:"days_to_process_request_reduction",   label:"Days shaved off request processing", ph:"e.g. 2"},
+      {key:"value_per_day_of_cycle_time",         label:"Dollar value per day saved ($)", ph:"e.g. 1000"},
+    ]},
+  { id:4, label:"Revenue Uplift from Better Conversion",
+    info:"Benefit = conversion rate improvement × avg deal value × annual leads. Enter conversion improvement as decimal (e.g. 0.02 = +2%).",
+    fields:[
+      {key:"conversion_rate_improvement",   label:"Conversion rate improvement (decimal)", ph:"e.g. 0.02"},
+      {key:"average_deal_value",            label:"Average deal value ($)", ph:"e.g. 50000"},
+      {key:"annual_leads_or_opportunities", label:"Annual leads/opportunities (#)", ph:"e.g. 200"},
+    ]},
+  { id:5, label:"Reduced Churn / Improved Customer Retention",
+    info:"Benefit = retention improvement × CLV × customers in scope. Enter retention improvement as decimal (e.g. 0.05 = 5% fewer lost).",
+    fields:[
+      {key:"retention_improvement_pct",    label:"Churn reduction (decimal, e.g. 0.05)", ph:"e.g. 0.05"},
+      {key:"customer_lifetime_value",      label:"Customer lifetime value ($)", ph:"e.g. 25000"},
+      {key:"customers_affected_retention", label:"Customers in scope (#)", ph:"e.g. 500"},
+    ]},
+  { id:6, label:"Fewer Errors / Rework / Defects",
+    info:"Benefit = error reduction rate × cost per error × annual volume. Enter error reduction as decimal (e.g. 0.40 = 40% fewer).",
+    fields:[
+      {key:"error_reduction_rate", label:"Error reduction rate (decimal, e.g. 0.40)", ph:"e.g. 0.40"},
+      {key:"cost_per_error",       label:"Cost to fix one error ($)", ph:"e.g. 500"},
+      {key:"annual_error_volume",  label:"Errors per year before project (#)", ph:"e.g. 200"},
+    ]},
+  { id:7, label:"Reduced Training / Onboarding Burden",
+    info:"Benefit = training hours saved per hire × new hires/year × trainer rate. Models savings from standardized workflows.",
+    fields:[
+      {key:"training_hours_saved_per_new_hire", label:"Training hours saved per hire", ph:"e.g. 20"},
+      {key:"new_hires_per_year",                label:"New hires per year (#)", ph:"e.g. 30"},
+      {key:"trainer_loaded_hourly_rate",        label:"Trainer loaded hourly rate ($)", ph:"e.g. 90"},
+    ]},
+  { id:8, label:"Lower Turnover / Improved Employee Retention",
+    info:"Benefit = turnover reduction × replacement cost × headcount. Enter turnover reduction as decimal (e.g. 0.05 = 5% fewer departures).",
+    fields:[
+      {key:"turnover_reduction_pct",        label:"Turnover reduction (decimal, e.g. 0.05)", ph:"e.g. 0.05"},
+      {key:"replacement_cost_per_employee", label:"Replacement cost per employee ($)", ph:"e.g. 40000"},
+      {key:"employees_affected_turnover",   label:"Headcount in scope (#)", ph:"e.g. 100"},
+    ]},
+  { id:9, label:"Reduced Vendor / Contractor Spend",
+    info:"Benefit = contractor hours replaced × rate + other vendor spend eliminated. Directly removes external cost.",
+    fields:[
+      {key:"contractor_hours_replaced",   label:"Contractor hours replaced/year", ph:"e.g. 500"},
+      {key:"contractor_hourly_rate",      label:"Contractor billing rate ($/hr)", ph:"e.g. 150"},
+      {key:"annual_vendor_spend_reduced", label:"Other vendor spend eliminated ($/yr)", ph:"e.g. 50000"},
+    ]},
+  { id:10, label:"Reduced Compliance / Audit Burden",
+    info:"Benefit = audit hours saved × compliance rate + probability-weighted penalty avoidance.",
+    fields:[
+      {key:"audit_hours_saved",            label:"Audit/compliance hours saved/year", ph:"e.g. 80"},
+      {key:"compliance_staff_loaded_rate", label:"Compliance staff loaded rate ($/hr)", ph:"e.g. 95"},
+      {key:"penalty_avoidance_prob",       label:"Penalty avoidance probability (0–1)", ph:"e.g. 0.3"},
+      {key:"expected_penalty_avoidance",   label:"Expected penalty value ($)", ph:"e.g. 100000"},
+    ]},
+  { id:11, label:"Avoided Downtime / Service Interruptions",
+    info:"Benefit = downtime hours avoided per incident × cost/hour × incidents/year. Good for infrastructure projects.",
+    fields:[
+      {key:"downtime_hours_avoided",     label:"Downtime hours avoided per incident", ph:"e.g. 4"},
+      {key:"cost_per_hour_downtime",     label:"Cost per hour of downtime ($)", ph:"e.g. 5000"},
+      {key:"incidents_per_year_reduced", label:"Incidents eliminated per year (#)", ph:"e.g. 6"},
+    ]},
+  { id:12, label:"Better Decision Quality",
+    info:"Benefit = forecast error reduction × cost of bad decisions × decisions improved. Conservative but useful for analytics projects.",
+    fields:[
+      {key:"forecast_error_reduction",    label:"Forecast error reduction (decimal, 0–1)", ph:"e.g. 0.20"},
+      {key:"cost_of_bad_decision",        label:"Annual cost of poor decisions ($)", ph:"e.g. 200000"},
+      {key:"decisions_improved_per_year", label:"Decisions improved per year (#)", ph:"e.g. 10"},
+    ]},
+  { id:13, label:"Increased Capacity Without Hiring",
+    info:"Benefit = avoided hires × fully-loaded annual salary. Models scaling capacity without adding headcount.",
+    fields:[
+      {key:"avoided_hires",           label:"FTE hires avoided (#)", ph:"e.g. 2"},
+      {key:"avg_fully_loaded_salary", label:"Fully-loaded annual cost per FTE ($)", ph:"e.g. 120000"},
+    ]},
+  { id:14, label:"Reduced Travel / Meeting / Coordination Overhead",
+    info:"Benefit = travel cost reduction + (meeting + coordination hours) × loaded rate.",
+    fields:[
+      {key:"travel_cost_reduction",    label:"Annual travel cost eliminated ($)", ph:"e.g. 30000"},
+      {key:"meeting_hours_saved",      label:"Meeting hours saved/year", ph:"e.g. 200"},
+      {key:"coordination_hours_saved", label:"Coordination hours saved/year", ph:"e.g. 150"},
+      {key:"coordination_loaded_rate", label:"Loaded rate for these savings ($/hr)", ph:"e.g. 80"},
+    ]},
+  { id:15, label:"Brand / Client Satisfaction Lift",
+    info:"Benefit = renewal rate improvement × renewal revenue + referral improvement × referral deal value. Enter improvements as decimals.",
+    fields:[
+      {key:"renewal_rate_improvement",  label:"Renewal rate increase (decimal, e.g. 0.03)", ph:"e.g. 0.03"},
+      {key:"annual_renewal_revenue",    label:"Annual revenue up for renewal ($)", ph:"e.g. 500000"},
+      {key:"referral_rate_improvement", label:"Referral rate increase (decimal, e.g. 0.02)", ph:"e.g. 0.02"},
+      {key:"referral_avg_deal_value",   label:"Average referral deal value ($)", ph:"e.g. 40000"},
+    ]},
+];
+
+/* ══════════════════════════════════════════════════════════════════
+   BUILD SOFT BENEFIT HTML
+══════════════════════════════════════════════════════════════════ */
+function buildSoftBenefits() {
+  const container = document.getElementById('soft-container');
+  SOFT_MODULES.forEach(mod => {
+    // wrapper div
+    const wrap = document.createElement('div');
+    wrap.style.marginBottom = '6px';
+
+    // header row: checkbox + label + info
+    const row = document.createElement('div');
+    row.className = 'inp-row';
+    row.style.cursor = 'pointer';
+    row.style.userSelect = 'none';
+
+    const chk = document.createElement('div');
+    chk.className = 'soft-chk';
+    chk.id = `schk-${mod.id}`;
+
+    const lbl = document.createElement('span');
+    lbl.className = 'inp-label';
+    lbl.textContent = `${mod.id}. ${mod.label}`;
+
+    const infoWrap = document.createElement('div');
+    infoWrap.className = 'info-wrap';
+    infoWrap.innerHTML = `<div class="info-btn">i</div><div class="tooltip">${mod.info}</div>`;
+
+    row.appendChild(chk);
+    row.appendChild(lbl);
+    row.appendChild(infoWrap);
+
+    // clicking the row (but not the info bubble) toggles
+    row.addEventListener('click', (e) => {
+      if (!e.target.closest('.info-wrap')) toggleSoft(mod.id);
+    });
+
+    // sub-inputs grid
+    const sub = document.createElement('div');
+    sub.className = 'soft-sub';
+    sub.id = `ssub-${mod.id}`;
+
+    const grid = document.createElement('div');
+    grid.className = 'soft-grid';
+
+    mod.fields.forEach(f => {
+      const pair = document.createElement('div');
+      pair.className = 'sub-pair';
+      pair.innerHTML = `
+        <label>${f.label}</label>
+        <input type="number" class="nf" id="sf_${mod.id}_${f.key}"
+               placeholder="${f.ph}" min="0" step="any" />`;
+      grid.appendChild(pair);
+    });
+
+    sub.appendChild(grid);
+    wrap.appendChild(row);
+    wrap.appendChild(sub);
+    container.appendChild(wrap);
+  });
+}
+
+function toggleSoft(id) {
+  document.getElementById(`schk-${id}`).classList.toggle('on');
+  document.getElementById(`ssub-${id}`).classList.toggle('open');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ANALYSIS OPTION CHECKBOXES
+══════════════════════════════════════════════════════════════════ */
+function toggleChk(id) {
+  document.getElementById(id).classList.toggle('on');
+}
+function isOn(id) {
+  return document.getElementById(id).classList.contains('on');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   POPUP
+══════════════════════════════════════════════════════════════════ */
+function showPopup(msg) {
+  document.getElementById('popup-msg').textContent = msg;
+  document.getElementById('popup').classList.add('on');
+}
+function closePopup() {
+  document.getElementById('popup').classList.remove('on');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LOADING OVERLAY
+══════════════════════════════════════════════════════════════════ */
+function showLoading(msg) {
+  document.getElementById('load-msg').textContent = msg || 'Running...';
+  document.getElementById('loading').classList.add('on');
+}
+function hideLoading() {
+  document.getElementById('loading').classList.remove('on');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   CLEAR RESULTS
+══════════════════════════════════════════════════════════════════ */
+function clearResults() {
+  document.getElementById('placeholder').style.display = 'flex';
+  document.getElementById('results-content').style.display = 'none';
+  document.getElementById('btn-dl').disabled = true;
+  lastRes = null;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PYODIDE INIT
+══════════════════════════════════════════════════════════════════ */
+let pyodide = null;
+let pyReady = false;
+let lastRes  = null;
+
+async function initPyodide() {
+  const statusEl = document.getElementById('status');
+  try {
+    statusEl.textContent = '⏳ Loading Pyodide runtime...';
+    pyodide = await loadPyodide();
+
+    statusEl.textContent = '⏳ Loading numpy / pandas / matplotlib...';
+    await pyodide.loadPackage(['numpy', 'pandas', 'matplotlib']);
+
+    statusEl.textContent = '⏳ Initialising NPV engine...';
+    await pyodide.runPythonAsync(ENGINE_CODE);
+
+    pyReady = true;
+    statusEl.textContent = '✅ Python engine ready';
+    setTimeout(() => statusEl.classList.add('hidden'), 3000);
+  } catch(e) {
+    statusEl.textContent = '❌ Engine failed: ' + e.message;
+    console.error('Pyodide init error:', e);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   INPUT HELPERS
+══════════════════════════════════════════════════════════════════ */
+const gv  = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+const gf  = (id, fb=0) => { const v = parseFloat(gv(id)); return isNaN(v) ? fb : v; };
+const gi  = (id, fb=0) => { const v = parseInt(gv(id));   return isNaN(v) ? fb : v; };
+
+function validate() {
+  const miss = [];
+  if (!gv('inp-proj'))       miss.push('Project Name');
+  if (!gv('inp-co'))         miss.push('Company Name');
+  if (!gv('inp-investment')) miss.push('Initial Investment');
+  if (!gv('inp-benefit'))    miss.push('Annual Benefit');
+  if (!gv('inp-duration'))   miss.push('Duration (years)');
+  if (gv('inp-impl') === '') miss.push('Implementation (years)');
+  if (!gv('inp-opex'))       miss.push('Annual Expenses');
+  if (!gv('inp-discount'))   miss.push('Discount Rate');
+  if (!gv('inp-inflation'))  miss.push('Inflation Rate');
+  if (!gv('inp-tax'))        miss.push('Tax Rate');
+  if (!gv('inp-overhead'))   miss.push('Overhead Rate');
+  if (!gv('inp-peak'))       miss.push('Adoption Peak');
+  if (!gv('inp-ramp'))       miss.push('Ramp Shape');
+  const dur = gi('inp-duration',0), impl = gi('inp-impl',0);
+  if (dur > 0 && impl >= dur) miss.push('Duration must exceed Implementation years');
+  return miss;
+}
+
+function collectSoft() {
+  const sb = {};
+  SOFT_MODULES.forEach(mod => {
+    if (document.getElementById(`schk-${mod.id}`)?.classList.contains('on')) {
+      mod.fields.forEach(f => {
+        const val = parseFloat(document.getElementById(`sf_${mod.id}_${f.key}`)?.value || '0') || 0;
+        sb[f.key] = val;
+      });
+    }
+  });
+  return sb;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   RUN MODEL
+══════════════════════════════════════════════════════════════════ */
+async function runModel() {
+  // Validate first — always, even if Pyodide isn't ready
+  const miss = validate();
+  if (miss.length > 0) {
+    showPopup('Missing required fields:\n• ' + miss.join('\n• '));
+    return;
+  }
+
+  if (!pyReady) {
+    showPopup('The Python engine is still loading — please wait a moment and try again.');
+    return;
+  }
+
+  showLoading('Running NPV model...');
+
+  try {
+    const params = {
+      project_name:         gv('inp-proj'),
+      company_name:         gv('inp-co'),
+      initial_investment:   gf('inp-investment'),
+      annual_benefit:       gf('inp-benefit'),
+      duration_years:       gi('inp-duration'),
+      implementation_years: gi('inp-impl'),
+      annual_opex:          gf('inp-opex'),
+      adoption_peak:        gf('inp-peak', 1.0),
+      ramp_shape:           gf('inp-ramp', 2.0),
+      discount_rate:        gf('inp-discount', 0.10),
+      inflation_rate:       gf('inp-inflation', 0.03),
+      tax_rate:             gf('inp-tax', 0.25),
+      overhead_rate:        gf('inp-overhead', 0.10),
+      soft_benefits:        collectSoft(),
+      run_spider:           isOn('chk-spider'),
+      run_mc:               isOn('chk-mc'),
+      run_text:             isOn('chk-text'),
+    };
+
+    // Convert JS object to Python-friendly form
+    pyodide.globals.set('_params', pyodide.toPy(params));
+    const result = await pyodide.runPythonAsync('run_from_js(_params)');
+    const res = result.toJs({ dict_converter: Object.fromEntries });
+    lastRes = { params, res };
+    displayResults(params, res);
+  } catch(e) {
+    hideLoading();
+    showPopup('Engine error:\n' + e.message);
+    console.error(e);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   DISPLAY RESULTS
+══════════════════════════════════════════════════════════════════ */
+function displayResults(params, res) {
+  hideLoading();
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('results-content').style.display = 'block';
+
+  // Cash flow (always)
+  document.getElementById('img-cf').src = 'data:image/png;base64,' + res.cashflow_img;
+  document.getElementById('blk-cf').style.display = 'block';
+
+  // Spider
+  if (params.run_spider && res.spider_img) {
+    document.getElementById('img-spider').src = 'data:image/png;base64,' + res.spider_img;
+    document.getElementById('blk-spider').style.display = 'block';
+    const vars = res.spider_variables || [];
+    const dSel = document.getElementById('spider-disp');
+    const hSel = document.getElementById('spider-hl');
+    dSel.innerHTML = '<option value="all">All Variables</option>';
+    hSel.innerHTML = '<option value="none">None</option>';
+    vars.forEach(vr => {
+      const lbl = vr.replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
+      dSel.innerHTML += `<option value="${vr}">${lbl}</option>`;
+      hSel.innerHTML += `<option value="${vr}">${lbl}</option>`;
+    });
+  } else {
+    document.getElementById('blk-spider').style.display = 'none';
+  }
+
+  // Monte Carlo
+  if (params.run_mc && res.mc_img) {
+    document.getElementById('img-mc').src = 'data:image/png;base64,' + res.mc_img;
+    document.getElementById('blk-mc').style.display = 'block';
+  } else {
+    document.getElementById('blk-mc').style.display = 'none';
+  }
+
+  // Text summary — now rendered as a PNG image by Python
+  if (params.run_text && res.text_summary) {
+    const el = document.getElementById('text-summary');
+    el.innerHTML = '<img src="data:image/png;base64,' + res.text_summary + '" style="width:100%;border-radius:4px;display:block;" alt="Analysis Summary" />';
+    el.style.display = 'block';
+    el.style.padding = '0';
+    el.style.background = 'transparent';
+    el.style.border = 'none';
+  } else {
+    document.getElementById('text-summary').style.display = 'none';
+  }
+
+  document.getElementById('btn-dl').disabled = false;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SPIDER REDRAW
+══════════════════════════════════════════════════════════════════ */
+async function updateSpider() {
+  if (!lastRes || !pyReady) return;
+  showLoading('Updating chart...');
+  try {
+    const dv = document.getElementById('spider-disp').value;
+    const hv = document.getElementById('spider-hl').value;
+    pyodide.globals.set('_sd', dv);
+    pyodide.globals.set('_sh', hv);
+    const b64 = await pyodide.runPythonAsync('redraw_spider(_sd, _sh)');
+    document.getElementById('img-spider').src = 'data:image/png;base64,' + b64;
+  } catch(e) { console.error(e); }
+  hideLoading();
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   DOWNLOAD
+══════════════════════════════════════════════════════════════════ */
+async function doDownload() {
+  if (!lastRes || !pyReady) return;
+  const ft = document.getElementById('ft-sel').value;
+  showLoading('Preparing download...');
+  try {
+    pyodide.globals.set('_ft', ft);
+    const payload = await pyodide.runPythonAsync('prepare_download(_ft)');
+    const data = payload.toJs({ dict_converter: Object.fromEntries });
+    const names = { pdf:'npv_report.pdf', png:'npv_charts.zip', csv:'npv_data.csv' };
+    const mimes = { pdf:'application/pdf', png:'application/zip', csv:'text/csv' };
+    const a = document.createElement('a');
+    a.href = `data:${mimes[ft]};base64,${data.content}`;
+    a.download = names[ft]; a.click();
+  } catch(e) { showPopup('Download error:\n' + e.message); console.error(e); }
+  hideLoading();
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ENGINE CODE (Python, runs inside Pyodide)
+══════════════════════════════════════════════════════════════════ */
+const ENGINE_CODE = "\nimport copy, io, base64, json\nfrom dataclasses import dataclass, field\nfrom typing import Dict, Tuple\n\nimport numpy as np\nimport pandas as pd\nimport matplotlib\nmatplotlib.use('Agg')  # non-interactive backend for Pyodide\nimport matplotlib.pyplot as plt\nimport matplotlib.ticker as mticker\nimport matplotlib.patches as mpatches\n\n# \u2500\u2500\u2500 1) Global & Project Variable Definitions \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n@dataclass\nclass GlobalVariables:\n    # These are assumptions that hold true across all projects\n    discount_rate: float = 0.10\n    tax_rate: float = 0.25\n    inflation_rate: float = 0.03\n    overhead_rate: float = 0.10\n\n\n@dataclass\nclass ProjectVariables:\n    # These are assumptions that hold true for one specific project\n    project_name: str = \"Project\"\n\n    # Time \"horizon\"\n    duration_years: int = 5\n    implementation_years: int = 1\n\n    # Financial Information\n    initial_investment: float = 1_000_000\n    annual_benefit: float = 400_000\n    annual_opex: float = 80_000  # \"opex\" = operating expenses\n\n    # S-Curve Ramp Up\n    adoption_peak: float = 1.0\n    ramp_shape: float = 6.0\n\n    # Uncertainty ranges for Monte Carlo Simulation\n    uncertainty: Dict[str, Tuple[float, float]] = field(default_factory=lambda: {\n        \"initial_investment\": (-0.10, 0.25),  # 10% less, 25% more\n        \"annual_benefit\": (-0.30, 0.20),       # benefits usually overestimated\n        \"annual_opex\": (-0.05, 0.20),           # opex can creep up\n        \"duration_years\": (0.00, 0.00),         # fixed\n        \"discount_rate\": (-0.02, 0.02),         # rate margin of error\n    })\n\n\n# \u2500\u2500\u2500 1b) Soft Benefit Input Variables \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n@dataclass\nclass SoftBenefits:\n\n    # 1) Time Saved / Productivity Gain\n    hours_saved_per_employee_per_year: float = 0.0\n    loaded_hourly_rate: float = 0.0\n    employees_affected_productivity: float = 0.0\n\n    # 2) Reduced Manager Oversight\n    manager_hours_saved_per_year: float = 0.0\n    manager_loaded_hourly_rate: float = 0.0\n\n    # 3) Faster Cycle Times\n    days_to_close_deal_reduction: float = 0.0\n    days_to_invoice_reduction: float = 0.0\n    days_to_process_request_reduction: float = 0.0\n    value_per_day_of_cycle_time: float = 0.0\n\n    # 4) Revenue Uplift from Better Conversion\n    conversion_rate_improvement: float = 0.0\n    average_deal_value: float = 0.0\n    annual_leads_or_opportunities: float = 0.0\n\n    # 5) Reduced Churn / Improved Retention\n    retention_improvement_pct: float = 0.0\n    customer_lifetime_value: float = 0.0\n    customers_affected_retention: float = 0.0\n\n    # 6) Fewer Errors / Rework / Defects\n    error_reduction_rate: float = 0.0\n    cost_per_error: float = 0.0\n    annual_error_volume: float = 0.0\n\n    # 7) Reduced Training / Onboarding Burden\n    training_hours_saved_per_new_hire: float = 0.0\n    new_hires_per_year: float = 0.0\n    trainer_loaded_hourly_rate: float = 0.0\n\n    # 8) Lower Turnover / Improved Employee Retention\n    turnover_reduction_pct: float = 0.0\n    replacement_cost_per_employee: float = 0.0\n    employees_affected_turnover: float = 0.0\n\n    # 9) Reduced Vendor / Contractor Spend\n    contractor_hours_replaced: float = 0.0\n    contractor_hourly_rate: float = 0.0\n    annual_vendor_spend_reduced: float = 0.0\n\n    # 10) Reduced Compliance / Audit Burden\n    audit_hours_saved: float = 0.0\n    compliance_staff_loaded_rate: float = 0.0\n    penalty_avoidance_prob: float = 0.0\n    expected_penalty_avoidance: float = 0.0\n\n    # 11) Avoided Downtime / Service Interruptions\n    downtime_hours_avoided: float = 0.0\n    cost_per_hour_downtime: float = 0.0\n    incidents_per_year_reduced: float = 0.0\n\n    # 12) Better Decision Quality\n    forecast_error_reduction: float = 0.0\n    cost_of_bad_decision: float = 0.0\n    decisions_improved_per_year: float = 0.0\n\n    # 13) Increased Capacity Without Hiring\n    avoided_hires: float = 0.0\n    avg_fully_loaded_salary: float = 0.0\n\n    # 14) Reduced Travel / Meeting / Coordination Overhead\n    travel_cost_reduction: float = 0.0\n    meeting_hours_saved: float = 0.0\n    coordination_hours_saved: float = 0.0\n    coordination_loaded_rate: float = 0.0\n\n    # 15) Brand / Client Satisfaction Lift\n    renewal_rate_improvement: float = 0.0\n    annual_renewal_revenue: float = 0.0\n    referral_rate_improvement: float = 0.0\n    referral_avg_deal_value: float = 0.0\n\n\ndef compute_soft_benefits(sb: SoftBenefits) -> float:\n    # Returns the total annualised dollar value of all active soft benefit categories.\n    total = 0.0\n\n    # 1) Time Saved / Productivity Gain\n    total += sb.hours_saved_per_employee_per_year * sb.loaded_hourly_rate * sb.employees_affected_productivity\n\n    # 2) Reduced Manager Oversight\n    total += sb.manager_hours_saved_per_year * sb.manager_loaded_hourly_rate\n\n    # 3) Faster Cycle Times\n    total += (sb.days_to_close_deal_reduction + sb.days_to_invoice_reduction + sb.days_to_process_request_reduction) * sb.value_per_day_of_cycle_time\n\n    # 4) Revenue Uplift from Better Conversion\n    total += sb.conversion_rate_improvement * sb.average_deal_value * sb.annual_leads_or_opportunities\n\n    # 5) Reduced Churn / Improved Retention\n    total += sb.retention_improvement_pct * sb.customer_lifetime_value * sb.customers_affected_retention\n\n    # 6) Fewer Errors / Rework / Defects\n    total += sb.error_reduction_rate * sb.cost_per_error * sb.annual_error_volume\n\n    # 7) Reduced Training / Onboarding Burden\n    total += sb.training_hours_saved_per_new_hire * sb.new_hires_per_year * sb.trainer_loaded_hourly_rate\n\n    # 8) Lower Turnover / Improved Employee Retention\n    total += sb.turnover_reduction_pct * sb.replacement_cost_per_employee * sb.employees_affected_turnover\n\n    # 9) Reduced Vendor / Contractor Spend\n    total += sb.contractor_hours_replaced * sb.contractor_hourly_rate + sb.annual_vendor_spend_reduced\n\n    # 10) Reduced Compliance / Audit Burden\n    total += sb.audit_hours_saved * sb.compliance_staff_loaded_rate + sb.penalty_avoidance_prob * sb.expected_penalty_avoidance\n\n    # 11) Avoided Downtime / Service Interruptions\n    total += sb.downtime_hours_avoided * sb.cost_per_hour_downtime * max(sb.incidents_per_year_reduced, 1.0)\n\n    # 12) Better Decision Quality\n    total += sb.forecast_error_reduction * sb.cost_of_bad_decision * sb.decisions_improved_per_year\n\n    # 13) Increased Capacity Without Hiring\n    total += sb.avoided_hires * sb.avg_fully_loaded_salary\n\n    # 14) Reduced Travel / Meeting / Coordination Overhead\n    total += sb.travel_cost_reduction + (sb.meeting_hours_saved + sb.coordination_hours_saved) * sb.coordination_loaded_rate\n\n    # 15) Brand / Client Satisfaction Lift\n    total += sb.renewal_rate_improvement * sb.annual_renewal_revenue + sb.referral_rate_improvement * sb.referral_avg_deal_value\n\n    return total\n\n\n# \u2500\u2500\u2500 2) S-Curve Adoption Ramp Up \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef s_curve_weights(n_ramp_periods: int, shape: float = 6.0) -> np.ndarray:\n    # Ramp periods is how long (years) it takes for a project to reach full adoption\n    # Shape is the steepness of the curve\n    if n_ramp_periods <= 0:\n        return np.array([1.0])\n    t = np.linspace(-shape / 2, shape / 2, n_ramp_periods)  # spaces the numbers\n    curve = 1.0 / (1.0 + np.exp(-t))  # logistic function\n    curve = curve / curve[-1]  # normalization process\n    return curve\n\n\n# \u2500\u2500\u2500 3) Modeling Cash Flow \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef build_cash_flows(proj: ProjectVariables, glob: GlobalVariables, soft: SoftBenefits = None) -> pd.DataFrame:\n    # contextual vars\n    r = glob.discount_rate\n    infl = glob.inflation_rate\n    T = proj.duration_years\n    impl = proj.implementation_years\n\n    benefit_years = T - impl\n    if benefit_years <= 0:\n        raise ValueError(\"lifespan of project must be longer than the implementation of the project\")\n\n    weights = s_curve_weights(benefit_years, shape=proj.ramp_shape)\n    weights *= proj.adoption_peak  # takes every s-curve weight and multiplies it by the peak of the adoption\n\n    # Compute the annualised soft benefit total; defaults to $0 if no soft benefits provided\n    annual_soft = compute_soft_benefits(soft) if soft is not None else 0.0\n\n    rows = []\n\n    rows.append({\n        \"year\": 0,\n        \"gross_benefit\": 0.0,\n        \"opex\": 0.0,\n        \"net_cash_flow\": -proj.initial_investment,\n        \"discount_factor\": 1.0,\n        \"pv_cash_flow\": -proj.initial_investment,\n    })\n\n    for t in range(1, impl + 1):  # looping through the years\n        inflation_adj = (1 + infl) ** t\n        opex = proj.annual_opex * inflation_adj\n        ncf = -opex\n        df = 1.0 / (1 + r) ** t\n        rows.append({\n            \"year\": t,\n            \"gross_benefit\": 0.0,\n            \"opex\": opex,\n            \"net_cash_flow\": ncf,\n            \"discount_factor\": df,\n            \"pv_cash_flow\": ncf * df,\n        })\n\n    for i, w in enumerate(weights):  # looping through the x/t values on the logistic graph\n        t = impl + 1 + i\n        inflation_adj = (1 + infl) ** t\n        # Soft benefits also ramp up with the S-curve and inflate over time\n        gross_benefit = (proj.annual_benefit + annual_soft) * w * inflation_adj\n        opex = proj.annual_opex * inflation_adj\n        ncf = gross_benefit - opex\n        df = 1.0 / (1 + r) ** t\n        rows.append({\n            \"year\": t,\n            \"gross_benefit\": gross_benefit,\n            \"opex\": opex,\n            \"net_cash_flow\": ncf,\n            \"discount_factor\": df,\n            \"pv_cash_flow\": ncf * df,\n        })\n\n    df_cf = pd.DataFrame(rows)\n    df_cf[\"cumulative_pv\"] = df_cf[\"pv_cash_flow\"].cumsum()  # cumulative_pv is a running total of all the value created\n    return df_cf\n\n\n# \u2500\u2500\u2500 4) Actual NPV calculation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef calculate_npv(cash_flow_table: pd.DataFrame) -> float:\n    return cash_flow_table[\"pv_cash_flow\"].sum()  # initial investment subtraction has already occured\n\n\n# \u2500\u2500\u2500 5) Sensitivity Analysis \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef sensitivity_analysis(proj: ProjectVariables, glob: GlobalVariables, swing_pct: float = 0.20, steps: int = 9) -> pd.DataFrame:\n    base_npv = calculate_npv(build_cash_flows(proj, glob))\n\n    variables = [\n        (proj, \"initial_investment\", \"pct\"),\n        (proj, \"annual_benefit\", \"pct\"),\n        (proj, \"annual_opex\", \"pct\"),\n        (proj, \"duration_years\", \"pct\"),\n        (glob, \"discount_rate\", \"absolute\"),\n    ]\n\n    records = []\n\n    for owner, var_name, ptype in variables:\n        base_val = getattr(owner, var_name)\n\n        if ptype == \"pct\":\n            deltas = np.linspace(-swing_pct, swing_pct, steps)\n            test_values = [base_val * (1 + d) for d in deltas]\n        else:\n            abs_swing = swing_pct * base_val if base_val != 0 else swing_pct\n            test_values = np.linspace(base_val - abs_swing, base_val + abs_swing, steps)\n            deltas = [(v - base_val) / base_val if base_val else 0 for v in test_values]\n\n        for tv, d in zip(test_values, deltas):\n            original = getattr(owner, var_name)\n\n            if var_name == \"duration_years\":\n                setattr(owner, var_name, max(int(round(tv)), owner.implementation_years + 1))\n            else:\n                setattr(owner, var_name, tv)\n\n            try:\n                npv = calculate_npv(build_cash_flows(proj, glob))\n            except ValueError:\n                npv = float('nan')\n\n            setattr(owner, var_name, original)\n\n            records.append({\n                \"variable\": var_name,\n                \"base_value\": base_val,\n                \"test_value\": tv,\n                \"pct_change\": d * 100,\n                \"npv\": npv,\n                \"npv_delta\": npv - base_npv,\n            })\n\n    return pd.DataFrame(records)\n\n\ndef sensitivity_summary(sens_df: pd.DataFrame) -> pd.DataFrame:\n    summary = (\n        sens_df.groupby(\"variable\")[\"npv\"]\n        .agg(npv_low=\"min\", npv_high=\"max\")\n        .assign(npv_swing=lambda x: x[\"npv_high\"] - x[\"npv_low\"])\n        .sort_values(\"npv_swing\", ascending=False)\n        .reset_index()\n    )\n    return summary\n\n\n# \u2500\u2500\u2500 6) Monte Carlo Simulation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef monte_carlo_simulation(proj: ProjectVariables, glob: GlobalVariables, n_simulations: int = 10_000, seed: int = 42) -> pd.DataFrame:\n    rng = np.random.default_rng(seed)  # seed is the initial value used to initialize a PRNG\n    uncertainty = proj.uncertainty\n\n    def tri_sample(base: float, lo_pct: float, hi_pct: float, n: int) -> np.ndarray:\n        # triangular rng (p10,50,90) for the value and uncertainty range\n        low = base * (1 + lo_pct)\n        high = base * (1 + hi_pct)\n        mode = np.clip(base, low, high)\n        return rng.triangular(low, mode, high, size=n)\n\n    def tri_abs(base: float, lo_abs: float, hi_abs: float, n: int) -> np.ndarray:\n        # same as previous but for absolute changes\n        low = base + lo_abs\n        high = base + hi_abs\n        mode = np.clip(base, low, high)\n        return rng.triangular(low, mode, high, size=n)\n\n    N = n_simulations\n    base_r = glob.discount_rate\n\n    inv_samples = tri_sample(proj.initial_investment, *uncertainty[\"initial_investment\"], N)\n    ben_samples = tri_sample(proj.annual_benefit, *uncertainty[\"annual_benefit\"], N)\n    opex_samples = tri_sample(proj.annual_opex, *uncertainty[\"annual_opex\"], N)\n    dr_lo, dr_hi = uncertainty[\"discount_rate\"]\n    rate_samples = tri_abs(base_r, dr_lo, dr_hi, N)\n\n    npv_results = np.empty(N)\n\n    p_trial = copy.deepcopy(proj)\n    g_trial = copy.deepcopy(glob)\n\n    for i in range(N):\n        p_trial.initial_investment = inv_samples[i]\n        p_trial.annual_benefit = ben_samples[i]\n        p_trial.annual_opex = opex_samples[i]\n        g_trial.discount_rate = rate_samples[i]\n\n        try:\n            cf = build_cash_flows(p_trial, g_trial)\n            npv_results[i] = calculate_npv(cf)\n        except ValueError:\n            npv_results[i] = float('nan')\n\n    results = pd.DataFrame({\n        \"trial\": np.arange(N),\n        \"initial_investment\": inv_samples,\n        \"annual_benefit\": ben_samples,\n        \"annual_opex\": opex_samples,\n        \"discount_rate\": rate_samples,\n        \"npv\": npv_results,\n    })\n\n    return results\n\n\ndef probabilistic_summary(mc_results: pd.DataFrame) -> Dict:\n    # brings monte carlo results together\n    npv = mc_results[\"npv\"].dropna()\n    return {\n        \"p10\": float(np.percentile(npv, 10)),\n        \"p50\": float(np.percentile(npv, 50)),\n        \"p90\": float(np.percentile(npv, 90)),\n        \"mean\": float(npv.mean()),\n        \"std\": float(npv.std()),\n        \"prob_positive\": float((npv > 0).mean() * 100),\n        \"n_simulations\": int(len(npv)),\n    }\n\n\n# \u2500\u2500\u2500 7) Chart helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nCOLORS = {\n    \"primary\": \"#1A3A5C\",\n    \"accent\": \"#2E86AB\",\n    \"positive\": \"#27AE60\",\n    \"negative\": \"#C0392B\",\n    \"neutral\": \"#7F8C8D\",\n    \"highlight\": \"#F39C12\",\n    \"bg\": \"#F7F9FC\",\n    \"grid\": \"#DDE3EA\",\n}\n\nplt.rcParams.update({\n    \"figure.facecolor\": COLORS[\"bg\"],\n    \"axes.facecolor\": COLORS[\"bg\"],\n    \"axes.edgecolor\": COLORS[\"neutral\"],\n    \"axes.grid\": True,\n    \"grid.color\": COLORS[\"grid\"],\n    \"grid.linewidth\": 0.6,\n    \"font.family\": \"sans-serif\",\n    \"font.size\": 10,\n    \"axes.titlesize\": 13,\n    \"axes.labelsize\": 10,\n    \"xtick.color\": COLORS[\"primary\"],\n    \"ytick.color\": COLORS[\"primary\"],\n    \"text.usetex\": False,\n    \"axes.formatter.use_mathtext\": False,\n})\n\n\ndef _fmt_dollar(val: float) -> str:\n    if abs(val) >= 1e6:\n        return f\"${val/1e6:.2f}M\"\n    elif abs(val) >= 1e3:\n        return f\"${val/1e3:.1f}K\"\n    else:\n        return f\"${val:.0f}\"\n\n\ndef _fmt_pdf(val: float) -> str:\n    # PDF-safe: avoids $ which matplotlib PDF backend tries to parse as LaTeX\n    if abs(val) >= 1e6:\n        return \"USD {:.2f}M\".format(val/1e6)\n    elif abs(val) >= 1e3:\n        return \"USD {:.1f}K\".format(val/1e3)\n    return \"USD {:.0f}\".format(val)\n\n\ndef _fig_to_b64(fig) -> str:\n    # Converts a matplotlib figure to a base64-encoded PNG string for the browser\n    buf = io.BytesIO()\n    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')\n    buf.seek(0)\n    b64 = base64.b64encode(buf.read()).decode('utf-8')\n    plt.close(fig)\n    return b64\n\n\ndef plot_cash_flows(cf_table: pd.DataFrame, project_name: str = \"Project\") -> str:\n    fig, ax1 = plt.subplots(figsize=(11, 5.5))\n    ax2 = ax1.twinx()\n\n    years = cf_table[\"year\"].values\n    ncf = cf_table[\"net_cash_flow\"].values\n    cum = cf_table[\"cumulative_pv\"].values\n\n    bar_colors = [COLORS[\"positive\"] if v >= 0 else COLORS[\"negative\"] for v in ncf]\n    ax1.bar(years, ncf, color=bar_colors, alpha=0.82, zorder=3, width=0.55, label=\"Net Cash Flow\")\n    ax1.axhline(0, color=COLORS[\"neutral\"], linewidth=0.8, linestyle=\"--\")\n\n    ax2.plot(years, cum, color=COLORS[\"accent\"], linewidth=2.4, marker=\"o\", markersize=5, zorder=4, label=\"Cumulative PV\")\n    ax2.axhline(0, color=COLORS[\"highlight\"], linewidth=1.2, linestyle=\":\", label=\"Break-even line\")\n\n    final_npv = cum[-1]\n    ax2.annotate(\n        f\"NPV = {_fmt_dollar(final_npv)}\",\n        xy=(years[-1], final_npv),\n        xytext=(-60, 15), textcoords=\"offset points\",\n        arrowprops=dict(arrowstyle=\"->\", color=COLORS[\"primary\"]),\n        fontsize=9, color=COLORS[\"primary\"], fontweight=\"bold\",\n    )\n\n    ax1.set_xlabel(\"Year\", color=COLORS[\"primary\"])\n    ax1.set_ylabel(\"Net Cash Flow ($)\", color=COLORS[\"primary\"])\n    ax2.set_ylabel(\"Cumulative PV ($)\", color=COLORS[\"accent\"])\n    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))\n    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))\n\n    fig.suptitle(\n        f\"{project_name} \u2014 Cash Flows & Cumulative Present Value\",\n        fontsize=14, color=COLORS[\"primary\"], fontweight=\"bold\", y=1.01\n    )\n\n    h1, l1 = ax1.get_legend_handles_labels()\n    h2, l2 = ax2.get_legend_handles_labels()\n    ax1.legend(h1 + h2, l1 + l2, loc=\"lower right\", framealpha=0.9, fontsize=9)\n\n    plt.tight_layout()\n    return _fig_to_b64(fig)\n\n\ndef plot_spider(sens_df: pd.DataFrame, base_npv: float, project_name: str = \"Project\",\n                display_var: str = \"all\", highlight_var: str = \"none\") -> str:\n    fig, ax = plt.subplots(figsize=(10, 5.5))\n\n    palette = [COLORS[\"primary\"], COLORS[\"accent\"], COLORS[\"positive\"], COLORS[\"negative\"], COLORS[\"highlight\"], \"#8E44AD\"]\n\n    for idx, (var, grp) in enumerate(sens_df.groupby(\"variable\")):\n        # Filter: only draw selected variables\n        if display_var != \"all\" and var != display_var:\n            continue\n\n        grp = grp.sort_values(\"pct_change\")\n\n        # Highlight logic: if a variable is highlighted, dim all others\n        is_highlighted = (highlight_var == var)\n        is_dimmed = (highlight_var != \"none\" and not is_highlighted)\n\n        alpha = 0.22 if is_dimmed else 1.0\n        lw = 3.2 if is_highlighted else 2.0\n\n        ax.plot(\n            grp[\"pct_change\"], grp[\"npv\"],\n            label=var.replace(\"_\", \" \").title(),\n            color=palette[idx % len(palette)],\n            linewidth=lw, marker=\"o\", markersize=4 if not is_dimmed else 2,\n            alpha=alpha,\n        )\n\n    ax.axhline(base_npv, color=COLORS[\"neutral\"], linestyle=\"--\", linewidth=1.2, label=\"Base NPV\")\n    ax.axhline(0, color=COLORS[\"negative\"], linestyle=\":\", linewidth=1.0)\n    ax.axvline(0, color=COLORS[\"neutral\"], linestyle=\"--\", linewidth=0.8)\n\n    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))\n    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f\"{x:+.0f}%\"))\n    ax.set_xlabel(\"% Change in Variable\", color=COLORS[\"primary\"])\n    ax.set_ylabel(\"NPV ($)\", color=COLORS[\"primary\"])\n    fig.suptitle(\n        f\"{project_name} \u2014 Sensitivity Spider Chart\",\n        fontsize=13, color=COLORS[\"primary\"], fontweight=\"bold\"\n    )\n    ax.legend(fontsize=9, loc=\"best\", framealpha=0.9)\n\n    plt.tight_layout()\n    return _fig_to_b64(fig)\n\n\ndef plot_monte_carlo(mc_results: pd.DataFrame, prob_summary: Dict, project_name: str = \"Project\") -> str:\n    npv = mc_results[\"npv\"].dropna()\n    p10, p50, p90 = prob_summary[\"p10\"], prob_summary[\"p50\"], prob_summary[\"p90\"]\n    prob_pos = prob_summary[\"prob_positive\"]\n\n    fig, ax = plt.subplots(figsize=(11, 5.5))\n\n    n_bins = min(80, int(len(npv) ** 0.5))\n    counts, bins, patches = ax.hist(npv, bins=n_bins, edgecolor=\"none\", alpha=0.75)\n    for patch, left_edge in zip(patches, bins[:-1]):\n        patch.set_facecolor(COLORS[\"positive\"] if left_edge >= 0 else COLORS[\"negative\"])\n\n    for val, label, ls in [\n        (p10, \"P10\", \"--\"),\n        (p50, \"P50 (Median)\", \"-\"),\n        (p90, \"P90\", \"--\"),\n    ]:\n        ax.axvline(val, color=COLORS[\"highlight\"], linewidth=1.8, linestyle=ls, label=f\"{label}: {_fmt_dollar(val)}\")\n\n    ax.axvline(0, color=COLORS[\"negative\"], linewidth=1.4, linestyle=\":\", label=\"Break-even ($0)\")\n\n    _ann_lines = [\n        \"P10:  \" + _fmt_dollar(p10),\n        \"P50:  \" + _fmt_dollar(p50),\n        \"P90:  \" + _fmt_dollar(p90),\n        \"Mean: \" + _fmt_dollar(prob_summary[\"mean\"]),\n        \"Prob(NPV>0): \" + \"{:.1f}%\".format(prob_pos),\n    ]\n    ax.text(\n        0.97, 0.95, chr(10).join(_ann_lines),\n        transform=ax.transAxes, fontsize=9,\n        verticalalignment=\"top\", horizontalalignment=\"right\",\n        usetex=False,\n        bbox=dict(boxstyle=\"round,pad=0.5\", facecolor=\"white\",\n                  edgecolor=COLORS[\"neutral\"], alpha=0.9),\n    )\n\n    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt_dollar(x)))\n    ax.set_xlabel(\"NPV ($)\", color=COLORS[\"primary\"])\n    ax.set_ylabel(\"Frequency\", color=COLORS[\"primary\"])\n    fig.suptitle(\n        f\"{project_name} \u2014 Monte Carlo NPV Distribution ({prob_summary['n_simulations']:,} simulations)\",\n        fontsize=13, color=COLORS[\"primary\"], fontweight=\"bold\"\n    )\n    ax.legend(fontsize=9, loc=\"upper left\", framealpha=0.9)\n\n    plt.tight_layout()\n    return _fig_to_b64(fig)\n\n\n# \u2500\u2500\u2500 8) State kept between calls (for spider redraw & download) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n_last_sens_df = None\n_last_base_npv = None\n_last_project_name = None\n_last_cf_table = None\n_last_mc_results = None\n_last_prob_summ = None\n_last_text_summary = None\n_last_spider_img = None\n\n\ndef fmt_py(val: float) -> str:\n    if abs(val) >= 1e6:\n        return f\"${val/1e6:,.3f}M\"\n    return f\"${val:,.0f}\"\n\n\n\ndef render_summary_image(project_name, company_name, proj, glob, base_npv,\n                         verdict, soft_line, top_driver, summ_df, prob_summ):\n    NAVY=COLORS[\"primary\"]; STEEL=COLORS[\"accent\"]; GREEN=COLORS[\"positive\"]\n    RED=COLORS[\"negative\"]; AMBER=COLORS[\"highlight\"]; BGCOL=\"#EEF4FB\"\n    has_mc = prob_summ is not None\n    fig_h  = 7.8 if has_mc else 5.8\n    fig, ax = plt.subplots(figsize=(12, fig_h))\n    ax.set_facecolor(BGCOL); fig.patch.set_facecolor(BGCOL); ax.axis('off')\n    y=0.97; LH=0.055; LHS=0.042\n\n    def T(x, yp, s, size=10, color=NAVY, weight='normal', ha='left', style='normal'):\n        ax.text(x, yp, str(s), transform=ax.transAxes, fontsize=size,\n                color=color, fontweight=weight, ha=ha, va='top', style=style, usetex=False)\n\n    def HL(yp, lw=0.8, color='#aac4de'):\n        ax.plot([0, 1], [yp, yp], color=color, linewidth=lw,\n                transform=ax.transAxes, clip_on=False)\n\n    def SEC(yp, title):\n        HL(yp+0.02, lw=1.2, color=STEEL)\n        T(0.0, yp, title, size=9, color=STEEL, weight='bold')\n        return yp - LH\n\n    # Header\n    T(0.5, y, \"NPV VALUATION SUMMARY\", size=15, color=NAVY, weight='bold', ha='center')\n    y -= LH*0.65\n    T(0.5, y, \"Activera Consulting\", size=9, color=STEEL, ha='center', style='italic')\n    y -= LH*0.9; HL(y+0.01, lw=2, color=NAVY); y -= LH*0.4\n\n    # Metadata\n    def META(label, val):\n        nonlocal y\n        T(0.0, y, label+\":\", size=8.5, color=STEEL, weight='bold')\n        T(0.22, y, str(val), size=8.5, color=NAVY); y -= LHS\n\n    META(\"Project\", project_name)\n    META(\"Company\", company_name)\n    META(\"Horizon\", \"{} yrs  (impl: {} yr  |  benefit: {} yr)\".format(\n         proj.duration_years, proj.implementation_years,\n         proj.duration_years - proj.implementation_years))\n    META(\"Discount / Inflation\", \"{:.1%}  /  {:.1%}\".format(glob.discount_rate, glob.inflation_rate))\n    if soft_line and soft_line.strip():\n        val_part = soft_line.strip().split(\":\")[-1].strip() if \":\" in soft_line else soft_line.strip()\n        META(\"Soft Benefits\", val_part)\n    y -= LH*0.3\n\n    # Base-case\n    y = SEC(y, \"BASE-CASE RESULTS\")\n    for lbl, val, col in [\n        (\"Initial Investment\", fmt_py(proj.initial_investment), NAVY),\n        (\"Base-Case NPV\",      fmt_py(base_npv), GREEN if base_npv >= 0 else RED),\n        (\"Verdict\",            verdict, GREEN if \"POSITIVE\" in verdict else RED),\n    ]:\n        T(0.02, y, lbl, size=9, color=NAVY, weight='bold')\n        T(0.42, y, val, size=9, color=col,  weight='bold')\n        y -= LHS*1.15\n    y -= LH*0.2\n\n    # Sensitivity\n    y = SEC(y, \"SENSITIVITY  -  Top Driver: \" + top_driver.replace('_',' ').title())\n    for cx, cl, ch in [(0.02,\"Variable\",'left'),(0.45,\"NPV Low\",'right'),(0.63,\"NPV High\",'right'),(0.82,\"Swing\",'right')]:\n        T(cx, y, cl, size=8, color=STEEL, weight='bold', ha=ch)\n    y -= LHS\n    for ir, (_, row) in enumerate(summ_df.iterrows()):\n        ax.add_patch(plt.Rectangle((0,y-0.005),1,LHS+0.005,transform=ax.transAxes,\n                                    color=\"white\" if ir%2==0 else \"#ddeaf6\",zorder=0))\n        T(0.02, y, row['variable'].replace('_',' ').title(), size=7.5, color=NAVY)\n        T(0.45, y, fmt_py(row['npv_low']),   size=7.5, color=RED,   ha='right')\n        T(0.63, y, fmt_py(row['npv_high']),  size=7.5, color=GREEN, ha='right')\n        T(0.82, y, fmt_py(row['npv_swing']), size=7.5, color=NAVY,  ha='right')\n        y -= LHS\n    y -= LH*0.25\n\n    # Monte Carlo\n    if has_mc:\n        y = SEC(y, \"MONTE CARLO  ({:,} simulations)\".format(prob_summ['n_simulations']))\n        conf = \"HIGH\" if prob_summ['prob_positive']>=75 else (\"MODERATE\" if prob_summ['prob_positive']>=50 else \"LOW\")\n        cc   = GREEN if conf==\"HIGH\" else (AMBER if conf==\"MODERATE\" else RED)\n        for lbl, val, col in [\n            (\"P10  (Pessimistic)\",   fmt_py(prob_summ['p10']),  RED),\n            (\"P50  (Median)\",        fmt_py(prob_summ['p50']),  AMBER),\n            (\"P90  (Optimistic)\",    fmt_py(prob_summ['p90']),  GREEN),\n            (\"Mean NPV\",             fmt_py(prob_summ['mean']), NAVY),\n            (\"Std Dev\",              fmt_py(prob_summ['std']),  NAVY),\n            (\"Prob NPV > 0\",         \"{:.1f}%\".format(prob_summ['prob_positive']), NAVY),\n            (\"Confidence\",           conf, cc),\n        ]:\n            T(0.02, y, lbl, size=8.5, color=NAVY, weight='bold')\n            T(0.55, y, val, size=8.5, color=col,  weight='bold')\n            y -= LHS*1.05\n\n    HL(0.02, lw=1.5, color=NAVY)\n    plt.tight_layout(pad=0.5)\n    return _fig_to_b64(fig)\n\n\n# \u2500\u2500\u2500 9) Main entry point called by JavaScript \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef run_from_js(params):\n    global _last_sens_df, _last_base_npv, _last_project_name\n    global _last_cf_table, _last_mc_results, _last_prob_summ\n    global _last_text_summary, _last_spider_img\n\n    # Unpack parameters from JS\n    project_name = params[\"project_name\"]\n    company_name = params.get(\"company_name\", \"\")\n\n    glob = GlobalVariables(\n        discount_rate=float(params[\"discount_rate\"]),\n        tax_rate=float(params[\"tax_rate\"]),\n        inflation_rate=float(params[\"inflation_rate\"]),\n        overhead_rate=float(params[\"overhead_rate\"]),\n    )\n\n    proj = ProjectVariables(\n        project_name=project_name,\n        duration_years=int(params[\"duration_years\"]),\n        implementation_years=int(params[\"implementation_years\"]),\n        initial_investment=float(params[\"initial_investment\"]),\n        annual_benefit=float(params[\"annual_benefit\"]),\n        annual_opex=float(params[\"annual_opex\"]),\n        adoption_peak=float(params[\"adoption_peak\"]),\n        ramp_shape=float(params[\"ramp_shape\"]),\n    )\n\n    # Build SoftBenefits from the JS dict (only keys passed are non-zero)\n    sb = SoftBenefits()\n    sb_dict = dict(params.get(\"soft_benefits\", {}))\n    for key, val in sb_dict.items():\n        if hasattr(sb, key):\n            setattr(sb, key, float(val))\n\n    # Build cash flows and NPV\n    cf_table = build_cash_flows(proj, glob, sb)\n    base_npv = calculate_npv(cf_table)\n\n    # Always generate cash flow chart\n    cashflow_img = plot_cash_flows(cf_table, project_name)\n\n    # Sensitivity analysis (always computed \u2014 needed for spider if selected)\n    sens_df = sensitivity_analysis(proj, glob, swing_pct=0.20, steps=9)\n    summ_df = sensitivity_summary(sens_df)\n    top_driver = summ_df.iloc[0][\"variable\"]\n    spider_variables = list(sens_df[\"variable\"].unique())\n\n    _last_sens_df = sens_df\n    _last_base_npv = base_npv\n    _last_project_name = project_name\n    _last_cf_table = cf_table\n\n    # Spider chart\n    spider_img = None\n    if params.get(\"run_spider\", False):\n        spider_img = plot_spider(sens_df, base_npv, project_name)\n        _last_spider_img = spider_img\n\n    # Monte Carlo\n    mc_img = None\n    prob_summ = None\n    if params.get(\"run_mc\", False):\n        mc_results = monte_carlo_simulation(proj, glob, n_simulations=10000)\n        prob_summ = probabilistic_summary(mc_results)\n        mc_img = plot_monte_carlo(mc_results, prob_summ, project_name)\n        _last_mc_results = mc_results\n        _last_prob_summ = prob_summ\n\n    # Text summary\n    text_summary = None\n    if params.get(\"run_text\", False):\n        verdict = \"POSITIVE \u2014 project creates value.\" if base_npv > 0 else \"NEGATIVE \u2014 project destroys value.\"\n        annual_soft = compute_soft_benefits(sb)\n        soft_line = f\"  Soft Benefits (annualised):  {fmt_py(annual_soft)}/yr\\\\n\" if annual_soft > 0 else \"\"\n        mc_section = \"\"\n        if prob_summ:\n            prob_pos = prob_summ[\"prob_positive\"]\n            conf = \"HIGH\" if prob_pos >= 75 else (\"MODERATE\" if prob_pos >= 50 else \"LOW\")\n            mc_section = (\n                f\"\\\\n  MONTE CARLO RESULTS ({prob_summ['n_simulations']:,} simulations)\\\\n\"\n                f\"  {'\u2500'*50}\\\\n\"\n                f\"  P10 (Downside / Pessimistic):  {fmt_py(prob_summ['p10'])}\\\\n\"\n                f\"  P50 (Median / Base Case):      {fmt_py(prob_summ['p50'])}\\\\n\"\n                f\"  P90 (Upside / Optimistic):     {fmt_py(prob_summ['p90'])}\\\\n\"\n                f\"  Mean NPV:                      {fmt_py(prob_summ['mean'])}\\\\n\"\n                f\"  Std Dev:                       {fmt_py(prob_summ['std'])}\\\\n\"\n                f\"  Probability NPV > 0:           {prob_pos:.1f}%\\\\n\"\n                f\"  Confidence:                    {conf}\\\\n\"\n            )\n\n        text_summary = render_summary_image(\n            project_name=project_name, company_name=company_name,\n            proj=proj, glob=glob, base_npv=base_npv, verdict=verdict,\n            soft_line=soft_line, top_driver=top_driver,\n            summ_df=summ_df, prob_summ=prob_summ,\n        )\n        _last_text_summary = text_summary\n\n    return {\n        \"cashflow_img\": cashflow_img,\n        \"spider_img\": spider_img,\n        \"mc_img\": mc_img,\n        \"text_summary\": text_summary,\n        \"spider_variables\": spider_variables,\n        \"base_npv\": base_npv,\n        \"top_driver\": top_driver,\n    }\n\n\n# \u2500\u2500\u2500 Spider redraw (called when dropdowns change) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef redraw_spider(display_var: str, highlight_var: str) -> str:\n    if _last_sens_df is None:\n        return \"\"\n    return plot_spider(_last_sens_df, _last_base_npv, _last_project_name,\n                       display_var=display_var, highlight_var=highlight_var)\n\n\n# \u2500\u2500\u2500 Download preparation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ndef prepare_download(filetype: str) -> Dict:\n    import zipfile\n\n    # \u2500\u2500 Decode a base64 PNG string to raw bytes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    def b64_to_bytes(b64str):\n        return base64.b64decode(b64str)\n\n    # \u2500\u2500 Regenerate all chart images (always fresh) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    charts = {}  # key -> raw PNG bytes, in display order\n\n    if _last_text_summary is not None:\n        charts['summary'] = b64_to_bytes(_last_text_summary)\n\n    if _last_cf_table is not None:\n        charts['cashflow'] = b64_to_bytes(\n            plot_cash_flows(_last_cf_table, _last_project_name or \"Project\"))\n\n    if _last_sens_df is not None:\n        charts['spider'] = b64_to_bytes(\n            plot_spider(_last_sens_df, _last_base_npv, _last_project_name or \"Project\"))\n\n    if _last_mc_results is not None and _last_prob_summ is not None:\n        charts['montecarlo'] = b64_to_bytes(\n            plot_monte_carlo(_last_mc_results, _last_prob_summ, _last_project_name or \"Project\"))\n\n    # \u2500\u2500 CSV \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    if filetype == \"csv\":\n        buf = io.StringIO()\n        if _last_cf_table is not None:\n            _last_cf_table.to_csv(buf, index=False)\n            if _last_mc_results is not None:\n                buf.write(\"\\n\\nMonte Carlo Results (first 1000 rows)\\n\")\n                _last_mc_results.head(1000).to_csv(buf, index=False)\n        return {\"content\": base64.b64encode(buf.getvalue().encode()).decode()}\n\n    # \u2500\u2500 PNG ZIP \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    elif filetype == \"png\":\n        zip_buf = io.BytesIO()\n        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:\n            file_names = {\n                'summary':    '00_analysis_summary.png',\n                'cashflow':   '01_cash_flows.png',\n                'spider':     '02_sensitivity_spider.png',\n                'montecarlo': '03_monte_carlo.png',\n            }\n            for key, fname in file_names.items():\n                if key in charts:\n                    zf.writestr(fname, charts[key])\n        return {\"content\": base64.b64encode(zip_buf.getvalue()).decode()}\n\n    # \u2500\u2500 PDF (document layout) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    else:\n        from matplotlib.backends.backend_pdf import PdfPages\n        from PIL import Image as PILImage\n        import datetime\n        matplotlib.rcParams['text.usetex'] = False\n\n        def _safe(s):\n            return str(s).replace('$', 'USD ').replace('_', ' ')\n\n        # Document geometry (landscape letter: 11 x 8.5 in)\n        PW, PH   = 11.0, 8.5\n        MAR      = 0.55    # margin inches\n        HDR_H    = 0.42    # header band\n        FTR_H    = 0.26    # footer band\n        RULE_H   = 0.022   # thin rule thickness\n        GAP      = 0.08    # gap between rule and body\n        BODY_W   = PW - 2 * MAR\n        # Body y-range in figure fractions\n        BODY_Y0  = (MAR + FTR_H + RULE_H + GAP) / PH\n        BODY_Y1  = (PH - MAR - HDR_H - RULE_H - GAP) / PH\n        BODY_H   = BODY_Y1 - BODY_Y0\n\n        NAVY  = COLORS[\"primary\"]\n        STEEL = COLORS[\"accent\"]\n        LGRAY = \"#DDE3EA\"\n        WHITE = \"#FFFFFF\"\n        today = datetime.date.today().strftime(\"%B %d, %Y\")\n        proj_safe = _safe(_last_project_name or \"Project\")\n\n        # \u2500\u2500 Page factory \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n        def make_page(page_num, total_pages):\n            fig = plt.figure(figsize=(PW, PH))\n            fig.patch.set_facecolor(WHITE)\n\n            # Header\n            ax_h = fig.add_axes([MAR/PW, (PH-MAR-HDR_H)/PH, BODY_W/PW, HDR_H/PH])\n            ax_h.set_facecolor(NAVY); ax_h.axis('off')\n            ax_h.text(0.012, 0.5, \"NPV VALUATION REPORT\",\n                      transform=ax_h.transAxes, color=WHITE,\n                      fontsize=11, fontweight='bold', va='center', usetex=False)\n            ax_h.text(0.50, 0.5, proj_safe,\n                      transform=ax_h.transAxes, color=\"#A8C4E8\",\n                      fontsize=9, va='center', ha='center', usetex=False)\n            ax_h.text(0.988, 0.5, \"Activera Consulting\",\n                      transform=ax_h.transAxes, color=\"#A8C4E8\",\n                      fontsize=8, va='center', ha='right', style='italic', usetex=False)\n\n            # Header rule\n            ax_hr = fig.add_axes([MAR/PW, (PH-MAR-HDR_H-RULE_H)/PH, BODY_W/PW, RULE_H/PH])\n            ax_hr.set_facecolor(STEEL); ax_hr.axis('off')\n\n            # Footer rule\n            ax_fr = fig.add_axes([MAR/PW, (MAR+FTR_H)/PH, BODY_W/PW, RULE_H/PH])\n            ax_fr.set_facecolor(LGRAY); ax_fr.axis('off')\n\n            # Footer\n            ax_f = fig.add_axes([MAR/PW, MAR/PH, BODY_W/PW, FTR_H/PH])\n            ax_f.set_facecolor(\"#F7F9FC\"); ax_f.axis('off')\n            ax_f.text(0.012, 0.5,\n                      \"Confidential  \u2014  Activera Consulting  |  \" + today,\n                      transform=ax_f.transAxes, color=STEEL,\n                      fontsize=7, va='center', usetex=False)\n            ax_f.text(0.988, 0.5, \"Page {} of {}\".format(page_num, total_pages),\n                      transform=ax_f.transAxes, color=STEEL,\n                      fontsize=7, va='center', ha='right', usetex=False)\n\n            # Body\n            ax_b = fig.add_axes([MAR/PW, BODY_Y0, BODY_W/PW, BODY_H])\n            ax_b.set_facecolor(WHITE); ax_b.axis('off')\n            return fig, ax_b\n\n        # \u2500\u2500 Image embedder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n        def embed_chart(fig, ax_b, img_bytes, title, subtitle):\n            \"\"\"Place chart image inside ax_b with a title and subtitle above it.\"\"\"\n            pil   = PILImage.open(io.BytesIO(img_bytes))\n            img_a = np.array(pil)\n\n            # Reserve top fraction for text, rest for image\n            txt_h = 0.13  # fraction of body height for title+subtitle\n            pos   = ax_b.get_position()  # in figure coords\n\n            # Title\n            ax_b.text(0.5, 0.98, title,\n                      transform=ax_b.transAxes, fontsize=11,\n                      fontweight='bold', color=NAVY,\n                      ha='center', va='top', usetex=False)\n            # Subtitle\n            ax_b.text(0.5, 0.89, subtitle,\n                      transform=ax_b.transAxes, fontsize=7.5,\n                      color=STEEL, ha='center', va='top',\n                      style='italic', usetex=False)\n\n            # Image axes sits below the text\n            img_ax = fig.add_axes([\n                pos.x0,\n                pos.y0,\n                pos.width,\n                pos.height * (1.0 - txt_h),\n            ])\n            img_ax.imshow(img_a, aspect='auto')\n            img_ax.axis('off')\n\n        # Count pages: summary (if any) + cover + one per chart\n        chart_pages = [k for k in ['cashflow', 'spider', 'montecarlo'] if k in charts]\n        total_pages = (1 if 'summary' in charts else 0) + 1 + len(chart_pages)\n        page_titles = {\n            'cashflow':   (\"Cash Flow & Cumulative Present Value\",\n                           \"Annual net cash flows (bars) and discounted cumulative PV (line). \"\n                           \"Line crossing zero = break-even point.\"),\n            'spider':     (\"Sensitivity Analysis \u2014 Spider Chart\",\n                           \"NPV response to +/-20% change in each variable. \"\n                           \"Steeper slope indicates greater sensitivity to that assumption.\"),\n            'montecarlo': (\"Monte Carlo NPV Distribution\",\n                           \"10,000 simulated scenarios with randomly varied inputs. \"\n                           \"Green = NPV above zero, Red = NPV below zero. \"\n                           \"Amber lines mark P10 (pessimistic), P50 (median), P90 (optimistic).\"),\n        }\n\n        pdf_buf = io.BytesIO()\n        page_num = 0\n        with PdfPages(pdf_buf) as pdf:\n\n            # Page 1 (if present): Analysis Summary\n            if 'summary' in charts:\n                page_num += 1\n                fig, ax_b = make_page(page_num, total_pages)\n                embed_chart(fig, ax_b, charts['summary'],\n                            \"Analysis Summary\",\n                            \"Base-case NPV, sensitivity drivers, and probabilistic outcomes.\")\n                pdf.savefig(fig, bbox_inches='tight')\n                plt.close(fig)\n\n            # Cover page\n            page_num += 1\n            fig_c = plt.figure(figsize=(PW, PH))\n            fig_c.patch.set_facecolor(NAVY)\n            ax_c = fig_c.add_axes([0, 0, 1, 1])\n            ax_c.set_facecolor(NAVY); ax_c.axis('off')\n            ax_c.add_patch(plt.Rectangle((0.08, 0.385), 0.84, 0.007,\n                                          transform=ax_c.transAxes,\n                                          color=STEEL, zorder=2))\n            ax_c.text(0.5, 0.72, \"NPV VALUATION REPORT\",\n                      transform=ax_c.transAxes, color=WHITE,\n                      fontsize=32, fontweight='bold', ha='center', usetex=False)\n            ax_c.text(0.5, 0.58, proj_safe,\n                      transform=ax_c.transAxes, color=\"#A8C4E8\",\n                      fontsize=20, ha='center', usetex=False)\n            ax_c.text(0.5, 0.32, \"Activera Consulting\",\n                      transform=ax_c.transAxes, color=STEEL,\n                      fontsize=14, ha='center', style='italic', usetex=False)\n            ax_c.text(0.5, 0.22, today,\n                      transform=ax_c.transAxes, color=\"#7BADD4\",\n                      fontsize=11, ha='center', usetex=False)\n            ax_c.text(0.5, 0.09, \"CONFIDENTIAL\",\n                      transform=ax_c.transAxes, color=\"#7BADD4\",\n                      fontsize=8, ha='center', alpha=0.55, usetex=False)\n            pdf.savefig(fig_c, bbox_inches='tight')\n            plt.close(fig_c)\n\n            # Chart pages\n            for key in chart_pages:\n                page_num += 1\n                title, subtitle = page_titles[key]\n                fig, ax_b = make_page(page_num, total_pages)\n                embed_chart(fig, ax_b, charts[key], title, subtitle)\n                pdf.savefig(fig, bbox_inches='tight')\n                plt.close(fig)\n\n        return {\"content\": base64.b64encode(pdf_buf.getvalue()).decode()}\n";
+
+/* ══════════════════════════════════════════════════════════════════
+   BOOT
+══════════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  buildSoftBenefits();   // FIX: was missing — soft benefit rows now render
+  initPyodide();
+});
+</script>
+</body>
+</html>
