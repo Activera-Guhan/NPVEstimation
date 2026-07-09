@@ -209,6 +209,11 @@
       font-size: 11px; font-weight: 700; color: var(--blue-dark);
       min-width: 16px; text-align: right;
     }
+    .rng-ticks {
+      display: flex; justify-content: space-between; width: 100%;
+      font-size: 10px; color: var(--blue-dark); opacity: 0.75;
+      margin-top: 2px;
+    }
 
     /* ── SOFT BENEFIT ROWS ── */
     .soft-divider {
@@ -714,11 +719,16 @@
         <div class="soft-sub" id="ssub-adopt">
           <div class="soft-grid">
             <div class="sub-pair">
-              <label>Ramp Speed</label>
+              <label>Adoption Speed</label>
               <div class="rng-wrap">
                 <input type="range" class="rng" id="inp-ramp" min="1" max="10" step="1" value="5"
                        oninput="document.getElementById('inp-ramp-val').textContent = this.value;" />
                 <span id="inp-ramp-val" class="rng-val">5</span>
+              </div>
+              <div class="rng-ticks">
+                <span>1 (Slow)</span>
+                <span>5 (Medium)</span>
+                <span>10 (Immediate)</span>
               </div>
             </div>
           </div>
@@ -1087,7 +1097,7 @@ function addCustomSoftInput() {
   const pair = document.createElement('div');
   pair.className = 'sub-pair';
   pair.innerHTML = `
-        <label>Dollar value saved per year ($)</label>
+        <label>Dollar Value of Benefits per year ($)</label>
         <input type="number" class="nf" id="cval-${id}" placeholder="e.g. 10000" min="0" step="any" />`;
 
   grid.appendChild(pair);
