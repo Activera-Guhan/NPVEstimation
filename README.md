@@ -106,7 +106,7 @@ Because the visual design (layout, colors, typography, spacing) has been careful
 - The Python code lives inside a large JavaScript string (`ENGINE_CODE`) in `control.html` — indentation and escaping matter, since it's Python source embedded in a JS template literal.
 - Chart colors and formatting are centralized in the `COLORS` dictionary and `plt.rcParams` block in the Python engine — change these in one place to re-theme all charts consistently.
 - The PDF export uses a fixed 8.5"×11" page layout with its own header/footer/cover-page logic; changes to chart content will generally flow through automatically, but page-count logic (`total_pages`) assumes the current set of chart types.
-- `index.html` and `control.html` must remain in the same folder as the logo image (`activera_consulting_logo.png`) for the branding to display correctly, since it's referenced via a relative path.
+- `index.html` and `control.html` must remain in the same folder as the logo image (`activera_consulting_logo.png`) for the branding to display correctly since it's referenced via a relative path.
 
 ---
 
