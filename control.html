@@ -62,15 +62,19 @@
     }
     .sec-title:first-child { margin-top: 0; }
     /* First section title also carries the brand logo, right-aligned
-       on the same line. Flex row keeps them vertically centered and
-       lets the logo scale without affecting the text's own sizing. */
+       on the same line. Fixed height keeps this row the same compact
+       size as the other section titles below it — the logo simply
+       fills that height completely, so it reads as large as possible
+       without ever inflating the bar itself. */
     .sec-title.with-logo {
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px;
+      height: 44px;
     }
     #brand-logo {
-      height: clamp(30px, 5vw, 56px);
+      height: 100%;
       width: auto;
+      max-width: 55%;
       display: block;
       flex-shrink: 0;
     }
@@ -590,7 +594,7 @@
       <!-- BASIC DETAILS -->
       <div class="sec-title with-logo">
         <span>Basic Details</span>
-        <img id="brand-logo" src="activera_consulting_logo.png" alt="Activera Consulting" />
+        <img id="brand-logo" src="activera_consulting_logo_short.png" alt="Activera Consulting" />
       </div>
       <div class="sec-box">
         <div class="basic-row">
