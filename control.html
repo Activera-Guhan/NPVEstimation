@@ -34,6 +34,22 @@
       background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 50%, #6fa0cc 100%);
     }
 
+    /* ── SITE HEADER (BRANDING) ──
+       Lives in normal document flow as the first child of <body>, so it
+       is always locked directly above the two panels — it can never
+       drift relative to them the way a fixed-position element would
+       when the viewport is resized. */
+    #site-header {
+      display: flex; align-items: center; justify-content: flex-end;
+      flex-shrink: 0;
+      padding: 8px 20px;
+    }
+    #brand-logo {
+      height: clamp(22px, 3.6vh, 40px);
+      width: auto;
+      display: block;
+    }
+
     /* ── TWO-COLUMN LAYOUT ── */
     .app-body {
       display: flex; flex: 1; overflow: hidden;
@@ -333,9 +349,26 @@
     }
     #placeholder {
       display: flex; align-items: center; justify-content: center;
-      height: 100%; text-align: center;
+      height: 100%; min-height: 360px; text-align: center;
+      position: relative;
+    }
+    /* Big brand icon, centered behind the placeholder text. Sized as a
+       percentage of the placeholder box itself (not the viewport), so
+       it always scales cleanly with the panel on any screen size. */
+    #brand-icon {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(68%, 400px);
+      height: auto;
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
     }
     #placeholder p {
+      position: relative;
+      z-index: 1;
       font-family: var(--font-disp);
       font-size: clamp(22px, 3vw, 40px);
       color: var(--blue-dark); line-height: 1.3;
@@ -551,6 +584,9 @@
   </style>
 </head>
 <body>
+<div id="site-header">
+  <img id="brand-logo" src="activera_consulting_logo.png" alt="Activera Consulting" />
+</div>
 <div class="app-body">
 
   <!-- ══ LEFT PANEL ══ -->
@@ -760,6 +796,7 @@
 
     <div id="results-scroll">
       <div id="placeholder">
+        <img id="brand-icon" src="activera_consulting_icon.png" alt="" aria-hidden="true" />
         <p>INPUT THE NECESSARY INFORMATION ON THE LEFT TO PRODUCE NPV RESULTS.</p>
       </div>
       <div id="results-content" style="display:none;">
