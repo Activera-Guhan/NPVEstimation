@@ -31,23 +31,7 @@
       width: 100vw; height: 100vh;
       overflow: hidden;
       display: flex; flex-direction: column;
-      background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 50%, #6fa0cc 100%);
-    }
-
-    /* ── SITE HEADER (BRANDING) ──
-       Lives in normal document flow as the first child of <body>, so it
-       is always locked directly above the two panels — it can never
-       drift relative to them the way a fixed-position element would
-       when the viewport is resized. */
-    #site-header {
-      display: flex; align-items: center; justify-content: flex-end;
-      flex-shrink: 0;
-      padding: 8px 20px;
-    }
-    #brand-logo {
-      height: clamp(22px, 3.6vh, 40px);
-      width: auto;
-      display: block;
+      background: #6fa0cc;
     }
 
     /* ── TWO-COLUMN LAYOUT ── */
@@ -77,6 +61,19 @@
       text-transform: uppercase; letter-spacing: 0.5px;
     }
     .sec-title:first-child { margin-top: 0; }
+    /* First section title also carries the brand logo, right-aligned
+       on the same line. Flex row keeps them vertically centered and
+       lets the logo scale without affecting the text's own sizing. */
+    .sec-title.with-logo {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+    #brand-logo {
+      height: clamp(30px, 5vw, 56px);
+      width: auto;
+      display: block;
+      flex-shrink: 0;
+    }
     .sec-box {
       border: 1.5px solid var(--border);
       border-radius: var(--r);
@@ -584,9 +581,6 @@
   </style>
 </head>
 <body>
-<div id="site-header">
-  <img id="brand-logo" src="activera_consulting_logo.png" alt="Activera Consulting" />
-</div>
 <div class="app-body">
 
   <!-- ══ LEFT PANEL ══ -->
@@ -594,7 +588,10 @@
     <div class="panel-scroll">
 
       <!-- BASIC DETAILS -->
-      <div class="sec-title">Basic Details</div>
+      <div class="sec-title with-logo">
+        <span>Basic Details</span>
+        <img id="brand-logo" src="activera_consulting_logo.png" alt="Activera Consulting" />
+      </div>
       <div class="sec-box">
         <div class="basic-row">
           <label>Project Name:</label>
