@@ -4,61 +4,111 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NPV Estimation — Activera Consulting</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --light: #f1f5f9;
+      --mid: #acc9e9;
+      --dark: #32568b;
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 400;
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      background: radial-gradient(ellipse at 50% 40%, #b8d4f0 0%, #8ab2da 40%, #6fa0cc 100%);
+      background: var(--light);
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 36px;
+      gap: 30px;
+    }
+
+    /* ── CORNER BRANDING ──
+       Pinned to the viewport corners with position:fixed. This is safe
+       here (unlike an element meant to track other page content) because
+       these are independent decorative anchors — their position is only
+       ever relative to the viewport itself, so they can't drift out of
+       sync with anything else on the page. Sizes scale with vw, capped
+       by a max px value, so they shrink gracefully on phone screens
+       without needing separate mobile rules. */
+    #brand-logo {
+      position: fixed;
+      top: clamp(14px, 3vh, 28px);
+      left: clamp(14px, 3vw, 32px);
+      width: min(30vw, 260px);
+      height: auto;
+      z-index: 2;
+    }
+    #brand-icon {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(26vw, 240px);
+      height: auto;
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+      z-index: 1;
+    }
+
+    main {
+      position: relative;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 30px;
+      padding: 0 20px;
+      text-align: center;
     }
 
     h1 {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: clamp(64px, 8vw, 120px);
-      color: #1A3A5C;
-      letter-spacing: 2px;
-      text-align: center;
-      text-shadow: 1px 2px 6px rgba(0,0,0,0.12);
+      font-weight: 700;
+      font-size: clamp(38px, 6.2vw, 76px);
+      color: var(--dark);
+      letter-spacing: 0.3px;
+      line-height: 1.1;
+    }
+    h1 span.accent {
+      display: block;
+      width: clamp(60px, 8vw, 96px);
+      height: 5px;
+      margin: 18px auto 0;
+      background: var(--mid);
+      border-radius: 3px;
     }
 
     #btn-start {
-      font-family: 'Bebas Neue', sans-serif;
-      font-size: clamp(18px, 2.2vw, 28px);
-      letter-spacing: 1.5px;
-      color: #1A3A5C;
-      background: #7BADD4;
-      border: 2.5px solid #1A3A5C;
+      font-family: inherit;
+      font-weight: 700;
+      font-size: clamp(16px, 1.9vw, 22px);
+      letter-spacing: 0.3px;
+      color: #ffffff;
+      background: var(--dark);
+      border: none;
       border-radius: 60px;
-      padding: 16px 64px;
+      padding: 16px 56px;
       cursor: pointer;
       transition: background 0.18s, transform 0.12s;
-      box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+      box-shadow: 0 3px 14px rgba(50, 86, 139, 0.28);
       text-decoration: none;
       display: inline-block;
     }
-    #btn-start:hover { background: #92bfe0; transform: scale(1.03); }
-
-    #brand-logo {
-      width: clamp(100px, 14vw, 180px);
-      height: auto;
-      opacity: 0.92;
-      flex-shrink: 0;
-    }
+    #btn-start:hover { background: #274469; transform: scale(1.03); }
   </style>
 </head>
 <body>
-  <h1>NPV ESTIMATION</h1>
-  <a id="btn-start" href="control.html">FIND YOUR NPV NOW!</a>
-  <img id="brand-logo" src="activera_consulting_logo.png" alt="Activera Consulting" />
+  <img id="brand-logo" src="activera_consulting_logo_short.png" alt="Activera Consulting" />
+  <img id="brand-icon" src="activera_consulting_icon.png" alt="" aria-hidden="true" />
+
+  <main>
+    <h1>NPV Estimation<span class="accent"></span></h1>
+    <a id="btn-start" href="control.html">Find Your NPV Now!</a>
+  </main>
 </body>
 </html>
