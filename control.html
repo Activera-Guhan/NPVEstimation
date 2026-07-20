@@ -76,6 +76,15 @@
       display: block;
       flex-shrink: 0;
     }
+    #btn-example {
+      background: var(--blue-dark); color: white;
+      border: none; border-radius: 20px;
+      padding: 5px 16px; font-size: 12px; font-weight: 700;
+      letter-spacing: 1px; cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 2px 8px rgba(50, 86, 139, 0.28);
+      flex-shrink: 0;
+    }
+    #btn-example:hover { background: #274469; }
     .sec-box {
       border: 1.5px solid var(--border);
       border-radius: var(--r);
@@ -606,16 +615,17 @@
       <!-- BASIC DETAILS -->
       <div class="sec-title with-logo">
         <span>Basic Details</span>
+        <button id="btn-example" onclick="loadExample()">Load Example</button>
         <img id="brand-logo" src="activera_consulting_logo_short.png" alt="Activera Consulting" />
       </div>
       <div class="sec-box">
         <div class="basic-row">
           <label>Project Name:</label>
-          <input type="text" id="inp-proj" placeholder="e.g. ERP Transformation" />
+          <input type="text" id="inp-proj" placeholder="e.g. AI Platform" />
         </div>
         <div class="basic-row">
           <label>Company Name:</label>
-          <input type="text" id="inp-co" placeholder="e.g. Acme Corp" />
+          <input type="text" id="inp-co" placeholder="e.g. Nucleus Organization" />
         </div>
       </div>
 
@@ -633,7 +643,7 @@
         </div>
 
         <div class="chk-row" onclick="toggleChk('chk-cf')">
-          <div class="chk" id="chk-cf"></div>
+          <div class="chk on" id="chk-cf"></div>
           <span class="chk-label">Cash Flow Diagram</span>
           <div class="info-wrap">
             <div class="info-btn">i</div>
@@ -642,7 +652,7 @@
         </div>
 
         <div class="chk-row" onclick="toggleChk('chk-spider')">
-          <div class="chk" id="chk-spider"></div>
+          <div class="chk on" id="chk-spider"></div>
           <span class="chk-label">Sensitivity Spider Chart</span>
           <div class="info-wrap">
             <div class="info-btn">i</div>
@@ -651,7 +661,7 @@
         </div>
 
         <div class="chk-row" onclick="toggleChk('chk-mc')">
-          <div class="chk" id="chk-mc"></div>
+          <div class="chk on" id="chk-mc"></div>
           <span class="chk-label">Monte Carlo Distribution</span>
           <div class="info-wrap">
             <div class="info-btn">i</div>
@@ -1202,6 +1212,40 @@ function showLoading(msg) {
 }
 function hideLoading() {
   document.getElementById('loading').classList.remove('on');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LOAD EXAMPLE
+══════════════════════════════════════════════════════════════════ */
+function loadExample() {
+  // Basic details
+  document.getElementById('inp-proj').value = 'AI Platform';
+  document.getElementById('inp-co').value = 'Nucleus Organization';
+
+  // Analysis options — select all (Overall Summary is always locked on)
+  ['chk-cf', 'chk-spider', 'chk-mc'].forEach(id => {
+    document.getElementById(id).classList.add('on');
+  });
+
+  // Core financial inputs
+  document.getElementById('inp-investment').value = 750000;
+  document.getElementById('inp-benefit').value = 400000;
+  document.getElementById('inp-opex').value = 75000;
+  document.getElementById('inp-duration').value = 5;
+  document.getElementById('inp-impl').value = 1;
+  document.getElementById('inp-discount').value = 0.10;
+  document.getElementById('inp-inflation').value = 0.03;
+  document.getElementById('inp-tax').value = 0.25;
+  document.getElementById('inp-overhead').value = 0.10;
+
+  // Optional Input 2: "Time Saved / Productivity Gain" (soft module id 1)
+  const schk1 = document.getElementById('schk-1');
+  const ssub1 = document.getElementById('ssub-1');
+  if (schk1 && !schk1.classList.contains('on')) schk1.classList.add('on');
+  if (ssub1 && !ssub1.classList.contains('open')) ssub1.classList.add('open');
+  document.getElementById('sf_1_hours_saved_per_employee_per_year').value = 50;
+  document.getElementById('sf_1_employees_affected_productivity').value = 50;
+  document.getElementById('sf_1_loaded_hourly_rate').value = 50;
 }
 
 /* ══════════════════════════════════════════════════════════════════
