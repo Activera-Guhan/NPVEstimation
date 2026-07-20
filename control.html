@@ -85,6 +85,15 @@
       flex-shrink: 0;
     }
     #btn-example:hover { background: #274469; }
+    #btn-clear-inputs {
+      background: var(--blue-dark); color: white;
+      border: none; border-radius: 20px;
+      padding: 5px 16px; font-size: 12px; font-weight: 700;
+      letter-spacing: 1px; cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 2px 8px rgba(50, 86, 139, 0.28);
+      flex-shrink: 0;
+    }
+    #btn-clear-inputs:hover { background: #274469; }
     .sec-box {
       border: 1.5px solid var(--border);
       border-radius: var(--r);
@@ -512,6 +521,32 @@
       border: none; border-radius: var(--r); padding: 8px 22px; cursor: pointer; font-size: 13px;
     }
 
+    /* ── CONFIRM POPUP (Clear Inputs / Clear Outputs) ── */
+    #confirm-popup {
+      display: none; position: fixed;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: white; border: 2px solid var(--red-clear);
+      border-radius: var(--r-lg); padding: 24px 30px;
+      z-index: 1000; max-width: 400px; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+    #confirm-popup.on { display: block; }
+    #confirm-popup h3 { color: var(--red-clear); margin-bottom: 10px; font-size: 16px; }
+    #confirm-popup p { color: var(--blue-dark); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+    .confirm-popup-btns {
+      margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+    }
+    #confirm-popup-cancel {
+      background: #e2e8f0; color: var(--blue-dark);
+      border: none; border-radius: var(--r); padding: 8px 22px; cursor: pointer; font-size: 13px;
+    }
+    #confirm-popup-cancel:hover { background: #cbd5e1; }
+    #confirm-popup-yes {
+      background: var(--red-clear); color: white;
+      border: none; border-radius: var(--r); padding: 8px 22px; cursor: pointer; font-size: 13px;
+    }
+    #confirm-popup-yes:hover { background: #a33025; }
+
     /* ── STATUS BAR ── */
     #status {
       position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
@@ -598,6 +633,32 @@
         margin-bottom: 4px;
       }
 
+      /* Let the Basic Details title row wrap so "Load Example",
+         "Clear Inputs", and the logo all stay tappable and readable
+         instead of getting squeezed onto one cramped line */
+      .sec-title.with-logo {
+        flex-wrap: wrap;
+        height: auto;
+        row-gap: 8px;
+      }
+      .sec-title.with-logo > span {
+        flex: 1 1 100%;
+      }
+      .sec-title.with-logo #brand-logo {
+        height: 28px;
+        max-width: 45%;
+      }
+      #btn-example, #btn-clear-inputs {
+        flex: 1 1 auto;
+        text-align: center;
+      }
+
+      /* Let the Results header wrap if "Clear Outputs" needs the room */
+      .results-hdr {
+        flex-wrap: wrap;
+        row-gap: 6px;
+      }
+
       /* One column of optional-input fields instead of two cramped ones */
       .soft-grid {
         grid-template-columns: 1fr;
@@ -616,6 +677,7 @@
       <div class="sec-title with-logo">
         <span>Basic Details</span>
         <button id="btn-example" onclick="loadExample()">Load Example</button>
+        <button id="btn-clear-inputs" onclick="confirmClearInputs()">Clear Inputs</button>
         <img id="brand-logo" src="activera_consulting_logo_short.png" alt="Activera Consulting" />
       </div>
       <div class="sec-box">
@@ -805,7 +867,7 @@
   <div id="right-panel">
     <div class="results-hdr">
       <span>Results</span>
-      <button id="btn-clear" onclick="clearResults()">Clear</button>
+      <button id="btn-clear" onclick="confirmClearOutputs()">Clear Outputs</button>
     </div>
 
     <div id="results-scroll">
@@ -884,6 +946,16 @@
   <h3>Please fill out the following</h3>
   <p id="popup-msg"></p>
   <button id="popup-ok" onclick="closePopup()">OK</button>
+</div>
+
+<!-- Confirm popup (Clear Inputs / Clear Outputs) -->
+<div id="confirm-popup">
+  <h3>Please Confirm</h3>
+  <p id="confirm-popup-msg"></p>
+  <div class="confirm-popup-btns">
+    <button id="confirm-popup-cancel" onclick="confirmPopupCancel()">Cancel</button>
+    <button id="confirm-popup-yes" onclick="confirmPopupYes()">Yes, Clear</button>
+  </div>
 </div>
 
 <!-- Status bar -->
@@ -1204,6 +1276,27 @@ function closePopup() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   CONFIRM POPUP (used by Clear Inputs / Clear Outputs)
+══════════════════════════════════════════════════════════════════ */
+let pendingConfirmAction = null;
+
+function showConfirm(msg, onConfirm) {
+  document.getElementById('confirm-popup-msg').textContent = msg;
+  pendingConfirmAction = onConfirm;
+  document.getElementById('confirm-popup').classList.add('on');
+}
+function confirmPopupYes() {
+  document.getElementById('confirm-popup').classList.remove('on');
+  const action = pendingConfirmAction;
+  pendingConfirmAction = null;
+  if (action) action();
+}
+function confirmPopupCancel() {
+  document.getElementById('confirm-popup').classList.remove('on');
+  pendingConfirmAction = null;
+}
+
+/* ══════════════════════════════════════════════════════════════════
    LOADING OVERLAY
 ══════════════════════════════════════════════════════════════════ */
 function showLoading(msg) {
@@ -1249,6 +1342,56 @@ function loadExample() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   CLEAR INPUTS
+   Resets every entry field on the left panel back to the exact state
+   it's in when the page is first opened (does not touch the results
+   side directly — that's handled separately via clearResults()).
+══════════════════════════════════════════════════════════════════ */
+function clearInputs() {
+  // Basic details
+  document.getElementById('inp-proj').value = '';
+  document.getElementById('inp-co').value = '';
+
+  // Analysis options — restore default (Cash Flow, Spider & Monte Carlo all ON;
+  // Overall Summary is always locked on and isn't touched here)
+  ['chk-cf', 'chk-spider', 'chk-mc'].forEach(id => {
+    document.getElementById(id).classList.add('on');
+  });
+
+  // Core financial & rate inputs
+  ['inp-investment', 'inp-benefit', 'inp-opex', 'inp-duration', 'inp-impl',
+   'inp-discount', 'inp-inflation', 'inp-tax', 'inp-overhead', 'inp-adopt-years'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  // Project Adoption Ramp Up — restore default (unchecked / collapsed)
+  const schkAdopt = document.getElementById('schk-adopt');
+  const ssubAdopt = document.getElementById('ssub-adopt');
+  if (schkAdopt) schkAdopt.classList.remove('on');
+  if (ssubAdopt) ssubAdopt.classList.remove('open');
+
+  // Built-in soft benefit modules — restore default (unchecked / collapsed / cleared)
+  SOFT_MODULES.forEach(mod => {
+    const chk = document.getElementById(`schk-${mod.id}`);
+    const sub = document.getElementById(`ssub-${mod.id}`);
+    if (chk) chk.classList.remove('on');
+    if (sub) sub.classList.remove('open');
+    mod.fields.forEach(f => {
+      const el = document.getElementById(`sf_${mod.id}_${f.key}`);
+      if (el) el.value = '';
+    });
+  });
+
+  // User-added custom optional inputs — remove entirely (none exist on first load)
+  const customContainer = document.getElementById('custom-soft-container');
+  if (customContainer) customContainer.innerHTML = '';
+  customSoftOrder.length = 0;
+  customSoftCounter = 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════
    CLEAR RESULTS
 ══════════════════════════════════════════════════════════════════ */
 function clearResults() {
@@ -1256,6 +1399,28 @@ function clearResults() {
   document.getElementById('results-content').style.display = 'none';
   document.getElementById('btn-dl').disabled = true;
   lastRes = null;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   CONFIRM-WRAPPED CLEAR ACTIONS (Clear Inputs / Clear Outputs buttons)
+══════════════════════════════════════════════════════════════════ */
+function confirmClearInputs() {
+  showConfirm(
+    'Are you sure you want to clear all inputs?\nThis will reset every entry field back to how it looked when the page first opened, and will also clear any results currently shown.',
+    () => {
+      clearInputs();
+      clearResults();
+    }
+  );
+}
+
+function confirmClearOutputs() {
+  showConfirm(
+    'Are you sure you want to clear the outputs?\nThis will remove the current results. Your inputs will not be affected.',
+    () => {
+      clearResults();
+    }
+  );
 }
 
 /* ══════════════════════════════════════════════════════════════════
