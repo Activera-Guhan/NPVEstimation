@@ -316,12 +316,13 @@
     .go-bar #btn-go { flex: 1; }
     #btn-go {
       width: 100%;
-      background: var(--green-go); color: white;
-      border: 2px solid var(--green-hov); border-radius: var(--r-lg);
+      background: var(--blue-dark); color: white;
+      border: none; border-radius: 60px;
       padding: 12px; font-family: var(--font-disp); font-weight: 700; font-size: 20px;
       letter-spacing: 0.5px; cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 3px 14px rgba(50, 86, 139, 0.28);
     }
-    #btn-go:hover { background: var(--green-hov); }
+    #btn-go:hover { background: #274469; }
 
     /* ── RIGHT PANEL ── */
     #right-panel {
@@ -335,12 +336,13 @@
     }
     .results-hdr span { font-weight: 700; font-size: 15px; color: var(--blue-dark); }
     #btn-clear {
-      background: var(--red-clear); color: white;
+      background: var(--blue-dark); color: white;
       border: none; border-radius: 20px;
       padding: 5px 16px; font-size: 12px; font-weight: 700;
-      letter-spacing: 1px; cursor: pointer;
+      letter-spacing: 1px; cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 2px 8px rgba(50, 86, 139, 0.28);
     }
-    #btn-clear:hover { opacity: 0.85; }
+    #btn-clear:hover { background: #274469; }
 
     #results-scroll {
       flex: 1; overflow-y: auto; padding: 16px 18px;
@@ -453,11 +455,12 @@
     }
     #btn-dl {
       flex: 1; background: var(--blue-mid); color: var(--blue-dark);
-      border: 2px solid var(--blue-dark); border-radius: var(--r-lg);
+      border: none; border-radius: 60px;
       padding: 12px; font-family: var(--font-disp); font-weight: 700; font-size: 20px;
       letter-spacing: 0.5px; cursor: pointer; transition: background 0.15s;
+      box-shadow: 0 3px 14px rgba(50, 86, 139, 0.28);
     }
-    #btn-dl:hover { background: #c3daf3; }
+    #btn-dl:hover { background: #8fb8e3; }
     #btn-dl:disabled { background: #ccc; color: #888; cursor: not-allowed; }
     .ft-wrap { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--blue-dark); }
     #ft-sel {
