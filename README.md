@@ -1,4 +1,4 @@
-# NPV Estimation Tool — Activera Consulting
+# [NPV Estimation Tool — Activera Consulting](https://activera-guhan.github.io/NPVEstimation/)
 
 ## Table of Contents
 1. [About](#about)
