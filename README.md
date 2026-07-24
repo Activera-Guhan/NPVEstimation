@@ -37,7 +37,7 @@ NPV is widely preferred over simpler metrics (like payback period or ROI) becaus
 * **Produce client-ready output:** Generate a polished written summary and charts, exportable as PDF, PNG, or CSV, for use in presentations or business cases.
 
 ## How To Use This Tool
-**1.** Open `index.html` in a web browser, and click **"Find Your NPV Now!"** — or open `control.html` directly.
+**1.** Click on the link at the very top of the instructions, and press "Find your NPV now!"
 
 **2.** Fill in **Basic Details**: Project Name and Company Name.
 
